@@ -25,7 +25,7 @@ Sem isso, qualquer mudança errada é difícil de desfazer.
 - [x] **0.1 Versionar com git** — `git init` (branch `main`), `.gitignore` (build/, .gradle/, .idea/, local.properties, *.apk, chaves, .DS_Store), primeiro commit com o estado atual.
 - [x] **0.2 Adicionar Gradle Wrapper** — `gradlew`/`gradlew.bat` (Gradle 8.13); `./gradlew :app:assembleDebug` compila do zero.
 - [x] **0.3 Limpar lixo** — removidos `{app`, `build/`, `app/build/` (com os duplicados do iCloud) e `.DS_Store`.
-- [!] **0.4 Tirar o projeto do iCloud** — confirmado: `~/Documents` está sincronizada com o iCloud. Mover para fora (ex.: `~/Projetos/impulsotv`) com o Android Studio fechado e reabrir o projeto no novo local. Evita novos duplicados e corrupção do `.git`.
+- [x] **0.4 Tirar o projeto do iCloud** — movido de `~/Documents/impulsotv.cloud` para **`~/Projetos/impulsotv`** (fora do iCloud). Git íntegro e build OK no novo local. No Android Studio: *File → Open* → `~/Projetos/impulsotv`.
 - [!] **0.5 Repositório remoto** — criar repositório privado (GitHub) e fazer push. Precisa da conta/organização onde o repositório vai ficar.
 
 **Pronto quando:** `./gradlew :app:assembleDebug` funciona no terminal e o código está no git.
@@ -129,4 +129,5 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | — | Análise completa do app e levantamento dos problemas | concluído |
 | 17/11/2026 | 1.1, 1.2 | Realtime reescrito e recarga de playlist em segundo plano; build OK | aguardando teste em campo |
 | 17/11/2026 | 0.1–0.3 | Limpeza, Gradle Wrapper 8.13, git iniciado com primeiro commit (já inclui 1.1/1.2) | concluído |
-| 17/11/2026 | 0.4, 0.5 | Projeto está no iCloud; mudança de pasta e repositório remoto aguardam decisão | pendente |
+| 17/11/2026 | 0.4 | Projeto movido para `~/Projetos/impulsotv`; git e build validados | concluído |
+| 17/11/2026 | 0.5 | Repositório remoto aguarda URL do GitHub (gh CLI não instalado) | pendente |
