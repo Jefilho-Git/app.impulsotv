@@ -105,12 +105,12 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 5 — Manutenção e documentação
 
-- [ ] **5.1 Remover código morto** — `HeartbeatManager`, `findDeviceByCode`, `registerDeviceConnection`, `sendHeartbeat`, `setDeviceOffline`, `disconnectDevice`, `fetchPlaylistItems`, `detectMediaOrientation`, wakelock da Activity.
-- [ ] **5.2 Liberar callback do NetworkStateManager** no `onDestroy`.
-- [ ] **5.3 Assinatura de release** — criar keystore própria (fora do repositório) e `signingConfigs.release`; testar build `assembleRelease` com R8.
-- [ ] **5.4 Atualizar toolchain** — Kotlin 1.9 → 2.x, resolver avisos de depreciação do Gradle.
-- [ ] **5.5 Versionamento** — incrementar `versionCode`/`versionName` a cada entrega.
-- [ ] **5.6 Atualizar ARCHITECTURE.md** — display mode, fingerprint UUID, Edge Functions, Realtime v1, fluxo de atualização em segundo plano.
+- [x] **5.1 Remover código morto** — −327 linhas: HeartbeatManager, funções PostgREST do SupabaseClient, detectMediaOrientation, wakelock da Activity, helpers sem uso. (`280d828`)
+- [x] **5.2 Liberar callback do NetworkStateManager** — `release()` no onDestroy; rede voltando acelera a reconexão (2s). (`280d828`)
+- [~] **5.3 Assinatura de release** — build lê `keystore.properties` (fora do git; modelo em `keystore.properties.example`); `assembleRelease` + R8 OK (9,3 MB) e abre sem erro. **Falta:** você gerar a keystore (comando na ARCHITECTURE.md §8) e guardá-la com as senhas fora do repositório. (`3e82226`)
+- [ ] **5.4 Atualizar toolchain** — Kotlin 1.9 → 2.x e avisos do Gradle. Exige baixar novas dependências (Maven/Google) e testar de novo; o lint de release também precisa baixar `lint-gradle` (build online).
+- [x] **5.5 Versionamento** — 3.1.0 (versionCode 4); o heartbeat envia `3.1.0-android`. (`5c5e7af`)
+- [x] **5.6 Atualizar ARCHITECTURE.md** — reescrita para a 3.1.0 (Edge Functions, Realtime v1, rotação, cache, reconexão, release).
 
 ---
 
@@ -144,3 +144,6 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 3.0 | Realtime recusa `postgres_changes` em `playlist_items`: publicação não habilitada no Supabase | pendente (Supabase) |
 | 17/11/2026 | 3.0, 1.1, 1.2 | Realtime habilitado no Supabase; mudança de playlist chega em segundos, sem tela preta | concluído |
 | 17/11/2026 | 4.7 | Conteúdo vertical deitado e cortado (rotação dupla). Agora: rotação automática 270° pelo painel, sem configurar o Android | concluído (validar na TV Box real) |
+| 17/11/2026 | 5.1, 5.2, 5.5, 5.6 | Código morto removido, monitor de rede liberado, versão 3.1.0, ARCHITECTURE.md reescrita | concluído |
+| 17/11/2026 | 5.3 | Assinatura de release configurada; keystore a ser gerada pelo usuário | aguardando keystore |
+| 17/11/2026 | — | 3.1.0 testada no emulador: conexão 200, Realtime ok, loop e imagens ok | verificado |
