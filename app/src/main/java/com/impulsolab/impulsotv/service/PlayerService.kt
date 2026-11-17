@@ -103,6 +103,8 @@ class PlayerService : Service() {
         // Fase 6: políticas do modo administrador (se ativo) e atualização automática
         DeviceOwner.apply(this)
         UpdateManager.get(this).start()
+        // Opção C: libera "sobrepor apps" e "instalar apps" pelo adb local (fora da main)
+        Thread({ com.impulsolab.impulsotv.adb.SelfPermissions.ensure(this) }, "self-permissions").start()
         Log.i(AppConstants.TAG_SERVICE, "PlayerService criado — WakeLock e ScreenReceiver ativos")
     }
 

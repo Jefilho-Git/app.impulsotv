@@ -357,9 +357,23 @@ class MainActivity : AppCompatActivity() {
      * sozinho no boot). Pede UMA vez por instalação — a marca fica num arquivo
      * de preferências que o reset de pareamento não apaga — e suspende o
      * watchdog do PlayerService enquanto a tela de configurações está aberta.
+     *
+     * Antes de abrir a tela, tenta liberar sozinho pelo adb local (opção C) —
+     * na PROSB3000 essa tela nem existe.
      */
     private fun checkOverlayPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return
+        lifecycleScope.launch {
+            val granted = withContext(Dispatchers.IO) {
+                com.impulsolab.impulsotv.adb.SelfPermissions.ensure(this@MainActivity)
+            }
+            if (!granted) askOverlayPermissionOnScreen()
+        }
+    }
+
+    /** Fallback: abre a tela do sistema (uma vez por instalação). */
+    private fun askOverlayPermissionOnScreen() {
+        if (Settings.canDrawOverlays(this)) return
 
         val devicePrefs = getSharedPreferences(AppConstants.PREF_DEVICE_FILE, MODE_PRIVATE)
         if (devicePrefs.getBoolean(AppConstants.PREF_OVERLAY_ASKED, false)) {

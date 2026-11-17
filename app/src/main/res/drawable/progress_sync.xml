@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Barra de progresso da tela "Sincronizando Mídias": trilho escuro + parte
+     preenchida proporcional ao progresso (antes usava um shape simples e
+     aparecia cheia mesmo em 0%). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <corners android:radius="6dp" />
+            <solid android:color="#2A2A40" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <corners android:radius="6dp" />
+                <solid android:color="#E94560" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

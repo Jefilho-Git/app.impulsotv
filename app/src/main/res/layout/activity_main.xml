@@ -119,9 +119,8 @@
             android:id="@+id/progressSync"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="400dp"
-            android:layout_height="wrap_content"
-            android:progressDrawable="@drawable/bg_code_input"
-            android:progressTint="#E94560"
+            android:layout_height="12dp"
+            android:progressDrawable="@drawable/progress_sync"
             android:max="100"
             android:progress="0"
             android:layout_marginBottom="8dp" />
