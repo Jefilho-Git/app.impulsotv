@@ -124,7 +124,11 @@ Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.
 - [x] **6.4 Teste no emulador** — Device Owner ativo; atualização silenciosa 3.2.0 → 3.2.1 com retorno automático; APK adulterado recusado.
 - [x] **6.5 Chave de release** — `~/Projetos/impulsotv-release.jks` (fora do repositório, `chmod 600`), alias `impulsotv`. Certificado `CN=ImpulsoLab, OU=ImpulsoTV, O=ImpulsoLab, L=Sao Paulo, ST=SP, C=BR`, **SHA-256 `9f2a80be5db16955cca8dcb08f1b19fb6670dcf4c2957f9693d062ca2e9bcf2a`**. Conferir um APK: `apksigner verify --print-certs <apk>`. ⚠️ Manter 2 cópias da chave + senha.
 - [ ] **6.6 Primeira publicação** — `./scripts/publicar.sh` e subir `dist/` na Hostinger (APK primeiro, `versao.json` por último).
-- [ ] **6.7 Migrar cada TV** (uma vez por TV — roteiro abaixo).
+- [~] **6.7 Migrar cada TV** — TV 172.16.50.215 migrada para `com.impulsolab.impulsotv` 3.2.0 (17/11), aguardando pareamento.
+  - ⚠️ **PROSB3000 não suporta modo administrador**: firmware sem `android.software.device_admin` (`dpm` recusa). Sem root (`ro.debuggable=0`, sem `su`). Atualização silenciosa e quiosque via Device Owner **indisponíveis nesse modelo** — ver alternativas (6.9).
+  - ⚠️ Não há tela "Sobrepor a outros apps" no firmware: a permissão precisa ser liberada via adb (`appops set com.impulsolab.impulsotv SYSTEM_ALERT_WINDOW allow`), senão o app pode não abrir sozinho após o boot.
+  - ⚠️ Segurança: `ro.adb.secure=0` — o adb pela rede aceita qualquer computador sem confirmação na tela.
+- [ ] **6.9 Atualização sem modo administrador (decisão pendente)** — (A) confirmação na tela; (B) script central via adb na rede; (C) app instala via adb local.
 - [ ] **6.8 Validar na TV real** — reboot com hotspot bloqueado (Wi‑Fi deve manter), atualização silenciosa de madrugada.
 
 ### Roteiro de migração por TV (6.7)
@@ -191,3 +195,4 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | 6.1–6.4 | Atualização automática + modo administrador implementados e testados no emulador (silenciosa, HOME sem pergunta, hotspot bloqueado, SHA-256) | concluído |
 | 17/11/2026 | 6.5–6.8 | Falta: chave de release, primeira publicação na Hostinger e migração das TVs | pendente |
 | 17/11/2026 | 6.5 | Chave de release criada; release 3.2.0 assinado e verificado (pacote definitivo `com.impulsolab.impulsotv`) | concluído |
+| 17/11/2026 | 6.7 | TV 172.16.50.215: `.debug` removida, 3.2.0 definitiva instalada. `dpm set-device-owner` recusado — firmware sem suporte a device admin. Sem tela de overlay; adb sem autenticação | parcial |
