@@ -1,306 +1,251 @@
-# ImpulsoTV v3 — Documentação de Arquitetura
+# ImpulsoTV — Documentação de Arquitetura
 
-> **Versão:** 3.0.0 | **Data:** Maio 2026
-> **Mudança principal:** Eliminação completa do WebView. Player nativo com ExoPlayer + Supabase direto.
-
----
-
-## 1. Por que eliminar o WebView?
-
-| Problema (WebView) | Solução (Nativo) |
-|---|---|
-| Tela preta entre vídeos (double-buffer CSS) | ExoPlayer pré-bufferiza o próximo vídeo nativamente |
-| Imagem menor que a tela (object-fit CSS) | ImageView com ScaleType controlado por código |
-| Dependência do Chrome 80 do sistema | Nenhuma dependência de browser |
-| Instabilidade em TV Box com pouca RAM | ExoPlayer otimizado para dispositivos limitados |
-| Service Worker complexo para cache offline | MediaCacheManager: cache simples em filesDir |
+> **Versão:** 3.1.0 (versionCode 4) | **Atualizado:** 17/11/2026
+> **Alvo:** TV Box **Android 10+** (API 29), Android no padrão horizontal.
+> Player nativo (ExoPlayer + Coil) falando com o Supabase **só por Edge Functions** e Realtime.
+> Roteiro de evolução e histórico: [PLANO_EXECUCAO.md](PLANO_EXECUCAO.md).
 
 ---
 
-## 2. Schema do banco (mapeado)
+## 1. Visão geral
+
+O app é um **player de sinalização digital em modo quiosque**. Cada TV Box é pareada a um
+dispositivo do painel por um código de 6 caracteres e reproduz em loop a playlist desse
+dispositivo. Mudanças feitas no painel chegam em segundos pelo Realtime.
+
+```
+┌────────────────────────────── TV Box ──────────────────────────────┐
+│  MainActivity                                                       │
+│   [PAIRING] código 6 chars   [SYNC] download   [PLAYER] loop        │
+│        │                                         ExoPlayer (vídeo)  │
+│        │                                         ImageView + Coil   │
+│  SupabaseClient ─── Edge Functions        RealtimeClient ── WS      │
+│  MediaCacheManager (filesDir/media)       OfflinePlaylistCache (Room)│
+│  SessionManager (SharedPreferences)       NetworkStateManager       │
+│  PlayerService (foreground 24/7, watchdog) ← BootReceiver (boot)    │
+└─────────────────────────────────────────────────────────────────────┘
+            │ HTTPS                                   │ WSS
+   ┌────────▼─────────┐                    ┌──────────▼──────────┐
+   │ Edge Functions   │                    │ Supabase Realtime   │
+   │ device-connect   │                    │ postgres_changes:   │
+   │ device-heartbeat │                    │  devices            │
+   │ device-api       │                    │  playlist_items     │
+   └──────────────────┘                    └─────────────────────┘
+```
+
+| Componente | Arquivo | Responsabilidade |
+|---|---|---|
+| `MainActivity` | `ui/` | Estados PAIRING / SYNC / PLAYER, loop, transições, rotação, reconexão |
+| `SupabaseClient` | `data/remote/` | Edge Functions `device-connect`, `device-heartbeat`, `device-api` |
+| `RealtimeClient` | `data/remote/` | WebSocket Phoenix (vsn 1.0.0) com reconexão automática |
+| `MediaCacheManager` | `manager/` | Download e cache das mídias, limpeza e limite de espaço |
+| `OfflinePlaylistCache` | `data/local/` | Última playlist em Room, para tocar sem internet |
+| `SessionManager` | `manager/` | Sessão do pareamento e identificador (UUID) do aparelho |
+| `NetworkStateManager` | `manager/` | Estado da rede; acelera a reconexão quando a rede volta |
+| `PlayerService` | `service/` | Foreground service, wakelock parcial, traz o app de volta à frente |
+| `BootReceiver` | `receiver/` | Abre serviço + app após `BOOT_COMPLETED` (não usa Direct Boot) |
+
+---
+
+## 2. Dados usados do Supabase
 
 ### `devices`
-| Coluna | Tipo | Uso no app |
-|---|---|---|
-| `id` | uuid | Identifica o dispositivo após pairing |
-| `device_code` | varchar(6) | Código digitado na tela de pairing (ex: `UBPTXF`) |
-| `name` | text | Exibido no HUD discreto do player |
-| `playlist_id` | uuid | FK para buscar os itens da playlist |
-| `connection_type` | text | App define como `"android"` no pairing |
-| `connection_fingerprint` | text | MD5 do ANDROID_ID do dispositivo |
-| `last_checkin` | timestamptz | Atualizado a cada 30s pelo HeartbeatManager |
-| `is_online` | bool | `true` enquanto app estiver rodando |
-| `is_connected` | bool | `true` após pairing bem-sucedido |
-| `restart_requested_at` | timestamptz | Dashboard seta para solicitar reset do device |
+| Coluna | Uso no app |
+|---|---|
+| `id`, `device_code`, `name` | Sessão salva após o pareamento |
+| `playlist_id` | Playlist atual; pode ser `null` (dispositivo ainda sem playlist) |
+| `restart_requested_at` | Reset pelo painel — dispara só quando o **valor muda** |
+| `is_connected` | `false` → app volta ao pareamento |
 
-### `playlist_items`
-| Coluna | Tipo | Uso no app |
-|---|---|---|
-| `id` | uuid | Identificador do item |
-| `playlist_id` | uuid | Filtragem dos itens |
-| `media_file_id` | uuid | FK para `media_files` (join PostgREST) |
-| `order_index` | int | Ordenação da reprodução |
-| `duration` | int | Segundos de exibição (imagens); vídeos ignoram |
-| `metadata` | jsonb | `{"display_mode":"vertical"}` ou `{}` |
-
-### `media_files`
-| Coluna | Tipo | Uso no app |
-|---|---|---|
-| `file_url` | text | URL do Supabase Storage para download/stream |
-| `file_type` | text | `"video"` ou `"image"` |
-| `file_extension` | text | `"mp4"`, `"webm"`, `"jpg"` |
-| `file_size` | bigint | Valida integridade do cache local |
-| `is_vertical` | bool | Detecta conteúdo portrait |
-| `width` / `height` | int | Aspect ratio para modo de exibição |
+### `playlist_items` + `media_files` (entregues achatados pela `device-api`)
+| Campo | Uso no app |
+|---|---|
+| `order_index` | Ordem de reprodução |
+| `duration` | Segundos de exibição de imagens (padrão 30s); vídeos usam a duração própria |
+| `display_mode` | **Escolha do painel**: `vertical`/`portrait` ou `horizontal`/`landscape` |
+| `is_vertical`, `width`/`height` | Orientação do arquivo (fallback e decisão de preencher/encaixar) |
+| `file_url`, `file_size`, `file_extension` | Download, nome no cache e validação de integridade |
 
 ---
 
-## 3. Arquitetura de componentes
+## 3. Pareamento e retomada da sessão
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         ImpulsoTV v3                            │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    MainActivity                          │   │
-│  │                                                          │   │
-│  │  [PAIRING]              [PLAYER]                         │   │
-│  │  EditText               ExoPlayer (vídeo)                │   │
-│  │  6 chars                ImageView + Coil (imagem)        │   │
-│  │      │                  Crossfade 400ms                  │   │
-│  │      │                  Loop infinito                    │   │
-│  └──────┼──────────────────────────┬───────────────────────┘   │
-│         │                          │                            │
-│  SupabaseClient              RealtimeClient                     │
-│  (REST / OkHttp)             (WebSocket Phoenix)                │
-│         │                          │                            │
-│  ┌──────▼──────┐           ┌───────▼──────┐                    │
-│  │  Supabase   │           │  Supabase    │                    │
-│  │  REST API   │           │  Realtime    │                    │
-│  │ (PostgREST) │           │  (Phoenix WS)│                    │
-│  └─────────────┘           └──────────────┘                    │
-│                                                                 │
-│  PlayerService (ForegroundService) ← WakeLock + Activity monitor│
-│  BootReceiver → inicia Service + Activity no boot              │
-│  MediaCacheManager → cache local em filesDir/media/            │
-│  HeartbeatManager → PATCH last_checkin a cada 30s              │
-│  SessionManager → SharedPreferences: device_id, playlist_id    │
-└─────────────────────────────────────────────────────────────────┘
+Painel cria dispositivo → mostra código (ex.: UBPTXF) → pessoa digita na TV
+        │
+POST device-connect { device_code, fingerprint (UUID do app), connection_type: "android", force }
+        ├─ "connected"/"ok"  → salva sessão → startPlayback()
+        ├─ "conflict"        → diálogo "Dispositivo em uso" → [Sim] repete com force=true
+        └─ outro / sem rede  → mensagem de erro na tela de pareamento
 ```
+
+**Ao abrir o app com sessão salva** (`resumeSession`):
+
+| Resposta do `device-connect` | Ação |
+|---|---|
+| `connected` / `ok` | Reprodução online |
+| `disconnected` | Reset completo (sessão + mídias) → pareamento |
+| `conflict` | Outro aparelho assumiu o código → pareamento **mantendo as mídias** |
+| sem resposta | Toca a playlist offline (Room) e tenta reconectar em segundo plano: 10s → 60s, ou 2s depois que a rede volta. Sem playlist salva: "Aguardando conexão…" |
+
+O heartbeat responder **409** tem o mesmo tratamento de `conflict`.
 
 ---
 
-## 4. Fluxo de pairing (invertido)
+## 4. Reprodução
 
 ```
-Dashboard (browser)              TV Box (Kotlin)
-───────────────────              ───────────────
-Cria dispositivo
-Exibe código: "UBPTXF"
-
-                    ←── usuário vê o código no dashboard
-                    ←── usuário digita "UBPTXF" na TV
-
-                         GET /rest/v1/devices
-                           ?device_code=eq.UBPTXF
-                           &select=*
-                                │
-                         device encontrado ──► salva sessão local
-                                │
-                         PATCH /rest/v1/devices
-                           ?id=eq.UUID
-                           connection_type="android"
-                           connection_fingerprint=MD5(ANDROID_ID)
-                                │
-                         carrega playlist ──► inicia reprodução
-                         conecta Realtime
-                         inicia Heartbeat
+startPlayback(): device-api → (vazia? tela "Nenhuma mídia" + checa a cada 30s)
+              → SYNC: baixa todos os arquivos → PLAYER: playCurrentItem()
+                                     │
+           vídeo: ExoPlayer, avança em STATE_ENDED (erro → pula em 2s)
+           imagem: Coil; o tempo conta a partir do onSuccess (+30s de limite de segurança)
+                                     │
+           advanceToNext(): playlist nova pronta? aplica e volta ao item 0
+                            senão (índice + 1) % tamanho
 ```
+
+### Transições sem tela preta
+O `PlayerView` fica **sempre visível por baixo**; a imagem é a camada de cima.
+
+| Transição | Como |
+|---|---|
+| Vídeo → vídeo | `keepContentOnPlayerReset`: o último quadro fica até o primeiro quadro do próximo |
+| Imagem → vídeo | A imagem só some (fade 400ms) em `onRenderedFirstFrame` |
+| Vídeo → imagem | Fade-in só depois de a imagem carregar |
+| Imagem → imagem | A imagem anterior serve de placeholder até a nova carregar |
+
+Um `itemToken` descarta callbacks atrasados de itens anteriores.
+
+### Orientação (TVs em pé sem configurar o Android)
+O Android da TV Box fica no **padrão (horizontal)**. Cada TV recebe só um tipo de mídia.
+
+| Situação | Resultado |
+|---|---|
+| Mídia **marcada vertical** no painel + tela deitada | App gira o player **270°** (`AppConstants.VERTICAL_ROTATION_DEGREES`) |
+| Tela já em pé (sistema girado / celular) | Não gira de novo |
+| Orientação da mídia = da área do player | Preenche a tela (ZOOM / CENTER_CROP) |
+| Orientações diferentes | Mídia inteira com faixas pretas (FIT) |
+
+`display_mode` do painel tem prioridade sobre `is_vertical`; as dimensões do arquivo **nunca**
+disparam rotação. Se a imagem ficar de cabeça para baixo na TV, troque o ângulo para `90f`.
 
 ---
 
-## 5. Fluxo de reprodução da playlist
+## 5. Atualizações em tempo real
 
-```
-Itens carregados e ordenados por order_index
-         │
-         ▼
-    playCurrentItem()
-         │
-    ┌────┴────┐
-    │ video?  │ sim → ExoPlayer.setMediaItem() + play()
-    └────┬────┘      Listener: onPlaybackStateChanged(ENDED) → advanceToNext()
-         │ não
-         ▼
-    imageView + Coil.load(url)
-    Handler.postDelayed(advanceToNext, duration_ms)
-         │
-         ▼
-    advanceToNext()
-    ├── pendingPlaylistReload? → reloadPlaylist() → volta ao índice 0
-    └── currentIndex = (currentIndex + 1) % size → playCurrentItem()
-```
+Canal único `realtime:impulsotv-{device_id}`, protocolo Phoenix **v1** (mensagens como objetos
+JSON), autenticado pelo `apikey` da URL (sem `access_token`).
 
-### Transição sem tela preta
+| Evento | Ação |
+|---|---|
+| `UPDATE devices` com `restart_requested_at` diferente do último visto | Reset → pareamento |
+| `UPDATE devices` com `is_connected = false` | Reset → pareamento |
+| `UPDATE devices` com `playlist_id` diferente | Busca a playlist nova e reassina o canal |
+| `* playlist_items` da playlist atual | Busca a playlist nova |
 
-```
-Vídeo → Vídeo:   ExoPlayer gerencia internamente (pré-buffer)
-Vídeo → Imagem:  crossfade() 400ms (alpha animation)
-Imagem → Vídeo:  crossfade() 400ms (alpha animation)
-Imagem → Imagem: crossfade() 400ms (alpha animation)
-```
+**Busca da playlist nova** (`requestPlaylistRefresh`): pela `device-api`, em segundo plano. Os
+arquivos são baixados **antes** da troca, que acontece ao fim do item em exibição. Se a busca
+falhar, a playlist atual continua tocando e o app tenta de novo em 8s. O **polling a cada 5 min**
+usa o mesmo caminho, como reserva do Realtime.
 
-### Display mode por item
+O primeiro `restart_requested_at` visto após o pareamento vira só referência (sem reset).
 
-| `metadata.display_mode` | `is_vertical` | Resultado |
-|---|---|---|
-| `"vertical"` | qualquer | FIT (pillarbox — sem corte) |
-| vazio/nulo | `true` | FIT (conteúdo portrait na TV landscape) |
-| vazio/nulo | `false` | ZOOM/FILL (preenche a tela) |
-
----
-
-## 6. Realtime — eventos monitorados
-
-### Canal único: `realtime:impulsotv-{device_id}`
-
-Escuta dois tipos de mudança em um único join WebSocket:
-
-**1. UPDATE em `devices` WHERE `id = device_id`**
-```
-Quando: dashboard altera restart_requested_at
-Ação:   limpa sessão local → mostra tela de pairing
-```
-
-**2. * em `playlist_items` WHERE `playlist_id = playlist_id`**
-```
-Quando: item adicionado, removido, reordenado, duração alterada
-Ação:   pendingPlaylistReload = true
-        → ao terminar o item atual → recarrega do Supabase → reinicia do item 0
-```
-
----
-
-## 7. Cache local de mídia
-
-```
-Diretório: /data/data/com.impulsolab.impulsotv/files/media/
-
-Nomenclatura: MD5(file_url).[ext]
-Exemplo: a3f1b2c4d5e6f7a8.mp4
-
-Estratégia:
-  1. getPlayableUri(item):
-     └── arquivo existe e tamanho bate? → "file:///..." (local)
-     └── não? → URL remota (Supabase Storage) enquanto baixa
-
-  2. preCachePlaylist(items):
-     └── para cada item, se não em cache → baixa via OkHttp
-     └── após download → cleanupOrphanedFiles() remove arquivos não usados
-
-  3. Na tela de pairing (reset):
-     └── clearAll() limpa todos os arquivos
-```
-
----
-
-## 8. RLS Policies necessárias
-
-O app usa a **anon key** do Supabase. As seguintes políticas precisam existir:
-
+**Requisito no Supabase:**
 ```sql
--- devices: leitura por device_code (pairing)
-CREATE POLICY "anon_select_device_by_code"
-ON public.devices FOR SELECT
-TO anon
-USING (true);  -- ou: USING (device_code IS NOT NULL)
-
--- devices: atualizar status de conexão e heartbeat
-CREATE POLICY "anon_update_device_connection"
-ON public.devices FOR UPDATE
-TO anon
-USING (true);
-
--- playlist_items: leitura para reprodução
-CREATE POLICY "anon_select_playlist_items"
-ON public.playlist_items FOR SELECT
-TO anon
-USING (true);
-
--- media_files: leitura dos metadados
-CREATE POLICY "anon_select_media_files"
-ON public.media_files FOR SELECT
-TO anon
-USING (true);
+alter publication supabase_realtime add table public.devices, public.playlist_items;
 ```
-
-> **Nota de segurança:** As políticas acima são permissivas. Se quiser restringir acesso,
-> substitua `USING (true)` por condições mais específicas, como limitar por `user_id`
-> ou exigir que o `device_code` seja válido antes de permitir SELECT em `playlist_items`.
 
 ---
 
-## 9. Como configurar e instalar
+## 6. Cache de mídia
 
-### 1. Configurar credenciais
-
-Em `app/build.gradle`, substitua:
-```gradle
-buildConfigField "String", "SUPABASE_ANON_KEY", '"SUA_CHAVE_ANON_AQUI"'
 ```
-com sua chave anon do Supabase Dashboard → Settings → API.
+filesDir/media/MD5(url_sem_query).ext   (download em .tmp → rename)
+```
 
-### 2. Build e instalação
+- `getPlayableUri`: usa o arquivo local se o tamanho confere; senão usa a URL remota. Renova o `lastModified` (= último uso).
+- `preCachePlaylist` (serializado com Mutex):
+  1. Apaga arquivos **fora** da playlist sem uso há **72 h** e `.tmp` com mais de 1 h.
+  2. Antes de cada download, garante **500 MB livres**, apagando primeiro os arquivos fora da playlist menos usados. Sem espaço suficiente, o item toca via rede.
+- Arquivos da playlist atual nunca são apagados pela limpeza.
+- Reset pelo painel → `clearAll()`. Conflito/takeover → mídias mantidas.
 
+Valores em `AppConstants`: `CACHE_UNUSED_RETENTION_MS`, `CACHE_MIN_FREE_BYTES`.
+
+---
+
+## 7. Disponibilidade 24/7
+
+- `PlayerService` em foreground (`mediaPlayback`) com wakelock parcial; a Activity mantém a tela ligada com `FLAG_KEEP_SCREEN_ON`.
+- Watchdog: sem ping da Activity por 30s → traz o app para a frente. Fica suspenso por até 2 min enquanto uma tela do sistema (permissão de sobreposição) estiver aberta.
+- Alarme de reforço: exato até o Android 11; inexato no 12+ sem `SCHEDULE_EXACT_ALARM`.
+- Permissão "Sobrepor a outros apps": pedida **uma vez por instalação** (marca em `impulsotv_device`, que o reset não apaga).
+- `BootReceiver`: `BOOT_COMPLETED`, `QUICKBOOT_POWERON`, `MY_PACKAGE_REPLACED` → serviço + app após 5s.
+- Pode ser o launcher (`HOME`) da TV Box — ver §8.
+
+---
+
+## 8. Build, instalação e operação
+
+### Configuração
+`SUPABASE_URL` e `SUPABASE_ANON_KEY` (chave publishable) ficam em `app/build.gradle` (`buildConfigField`).
+
+### Build
 ```bash
-# Build debug
-./gradlew assembleDebug
+./gradlew :app:assembleDebug     # app-debug.apk, pacote com.impulsolab.impulsotv.debug
+./gradlew :app:assembleRelease   # app-release.apk (R8), pacote com.impulsolab.impulsotv
+```
 
-# Instalar via ADB
-adb connect <IP_DO_TV_BOX>:5555
-adb install app/build/outputs/apk/debug/app-debug.apk
+### Assinatura de release
+1. Gere a chave **uma vez** e guarde-a fora do repositório:
+   ```bash
+   keytool -genkeypair -v -keystore ../impulsotv-release.jks -alias impulsotv \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+2. Copie `keystore.properties.example` para `keystore.properties` e preencha (o arquivo está no `.gitignore`).
 
-# Ver logs em tempo real
+Sem `keystore.properties`, o release é assinado com a chave de debug, com um aviso no build.
+**Sem a mesma chave, não é possível atualizar o app já instalado nas TVs.**
+
+### Instalação e logs
+```bash
+adb connect <IP_DA_TV_BOX>:5555
+adb install -r app/build/outputs/apk/release/app-release.apk
 adb logcat -s ImpulsoTV.Main ImpulsoTV.Player ImpulsoTV.Supabase \
-              ImpulsoTV.Realtime ImpulsoTV.Cache ImpulsoTV.Heartbeat
+              ImpulsoTV.Realtime ImpulsoTV.Cache ImpulsoTV.Service ImpulsoTV.Network
 ```
 
-### 3. Definir como launcher padrão (kiosk total)
-
+### Quiosque (opcional)
 ```bash
-adb shell cmd package set-home-activity \
-  com.impulsolab.impulsotv/.ui.MainActivity
+adb shell cmd package set-home-activity com.impulsolab.impulsotv/.ui.MainActivity
 ```
 
-### 4. Parear um dispositivo
-
-1. Abra o dashboard web
-2. Vá em Dispositivos → copie o `device_code` (ex: `UBPTXF`)
-3. Na TV Box, o app abre na tela de pairing
-4. Digite o código → Enter ou aguarde auto-conectar
-
 ---
 
-## 10. Navegação no código por tags
+## 9. Navegação no código por tags (logs e comentários)
 
-| Tag | Arquivo | O que é |
+| Tag | Onde | O que é |
 |---|---|---|
-| `[STATE]` | MainActivity | Transições PAIRING ↔ PLAYER |
-| `[PAIRING-UI]` | MainActivity | Lógica de digitação e validação do código |
-| `[PLAYER-INIT]` | MainActivity | Configuração do ExoPlayer |
-| `[PLAYLIST-LOOP]` | MainActivity | Ciclo de reprodução sequencial e loop |
-| `[ITEM-VIDEO]` | MainActivity | Reprodução de vídeo via ExoPlayer |
-| `[ITEM-IMAGE]` | MainActivity | Exibição de imagem via Coil + timer |
-| `[TRANSITION]` | MainActivity | Crossfade entre itens |
-| `[REALTIME]` | MainActivity | Handlers de eventos Supabase Realtime |
-| `[REALTIME-PROTOCOL]` | RealtimeClient | Protocolo Phoenix WebSocket |
-| `[RESTART]` | RealtimeClient | Detecção do comando restart_requested_at |
-| `[PLAYLIST-UPDATE]` | RealtimeClient | Detecção de mudanças na playlist |
-| `[PAIRING]` | SupabaseClient | Queries de pairing (findDeviceByCode) |
-| `[PLAYLIST]` | SupabaseClient | Query de itens com join media_files |
-| `[ACTIVITY-MONITOR]` | PlayerService | Ping/pong de saúde da Activity |
-| `[BOOT-SEQUENCE]` | BootReceiver | Ordem de boot: Service → Activity |
+| `[STATE]` | MainActivity | Transições PAIRING / SYNC / PLAYER |
+| `[PAIRING-UI]` | MainActivity | Tela e fluxo de pareamento |
+| `[RECONNECT]` | MainActivity | Retomada da sessão e reconexão após início offline |
+| `[SIGNAL]` | MainActivity / RealtimeClient | Reset, desconexão e takeover |
+| `[PLAYLIST-LOOP]` | MainActivity | Ciclo de reprodução |
+| `[PLAYLIST-UPDATE]` | MainActivity / RealtimeClient | Busca e troca de playlist em segundo plano |
+| `[EMPTY]` | MainActivity | Playlist vazia |
+| `[ITEM-VIDEO]` / `[ITEM-IMAGE]` | MainActivity | Reprodução de vídeo / imagem |
+| `[TRANSITION]` | MainActivity | Camadas e fades |
+| `[ORIENTATION]` | MainActivity | Rotação automática e preencher/encaixar |
+| `[REALTIME-PROTOCOL]` / `[RESTART]` | RealtimeClient | Protocolo Phoenix e regra do reset |
+| `[FUNCTION]` | SupabaseClient | Chamadas às Edge Functions |
+| `[CLEANUP]` / `[DISK-FULL]` | MediaCacheManager | Limpeza e limite de espaço |
+| `[ACTIVITY-MONITOR]` / `[SCREEN-EVENT]` | PlayerService | Watchdog e retorno à frente |
 
 ---
 
-*ImpulsoTV v3 — Player nativo sem WebView, construído sobre Supabase + ExoPlayer + Kotlin Coroutines.*
+## 10. Pendências conhecidas
+
+- `player_status` do heartbeat é sempre `"playing"` (4.5), até confirmar os valores aceitos pela `device-heartbeat`.
+- Regras de acesso (RLS) do Supabase ainda permissivas (Fase 3 do plano).
+- Validação final na TV Box Android 10 real; os testes até agora foram no emulador Android 13.
