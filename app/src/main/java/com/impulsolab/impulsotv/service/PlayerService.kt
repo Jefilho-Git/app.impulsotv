@@ -43,6 +43,9 @@ class PlayerService : Service() {
          */
         @Volatile var suppressBringToFrontUntil: Long = 0L
 
+        /** Extra: atraso (ms) antes de trazer a MainActivity para a frente (boot). */
+        const val EXTRA_BRING_TO_FRONT_DELAY_MS = "bring_to_front_delay_ms"
+
         fun isBringToFrontSuppressed(): Boolean =
             System.currentTimeMillis() < suppressBringToFrontUntil
     }
@@ -112,8 +115,16 @@ class PlayerService : Service() {
             lastPingTime = System.currentTimeMillis()
             handler.postDelayed(healthRunnable, AppConstants.ACTIVITY_DEAD_THRESHOLD_MS)
         }
-        // Traz a MainActivity para a frente sempre que o serviço for iniciado ou receba comando
-        bringMainActivityToFront()
+        // Traz a MainActivity para a frente sempre que o serviço for iniciado ou receba comando.
+        // No boot/atualização, espera o atraso pedido pelo BootReceiver — com o
+        // serviço em foreground o processo continua vivo durante a espera.
+        val delayMs = intent?.getLongExtra(EXTRA_BRING_TO_FRONT_DELAY_MS, 0L) ?: 0L
+        if (delayMs > 0) {
+            lastPingTime = System.currentTimeMillis() + delayMs   // watchdog não age antes
+            handler.postDelayed({ bringMainActivityToFront() }, delayMs)
+        } else {
+            bringMainActivityToFront()
+        }
         return START_STICKY
     }
 

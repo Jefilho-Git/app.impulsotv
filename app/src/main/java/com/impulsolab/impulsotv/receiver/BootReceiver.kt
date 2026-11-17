@@ -6,8 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.impulsolab.impulsotv.constants.AppConstants
 import com.impulsolab.impulsotv.service.PlayerService
@@ -36,46 +34,38 @@ class BootReceiver : BroadcastReceiver() {
 
         Log.i(AppConstants.TAG_BOOT, "Boot a frio / Queda de energia detectado: $acao")
 
-        // Atraso de 5 segundos para garantir que o System UI e serviços base estejam totalmente carregados
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                // 1. Inicia o Foreground Service 24/7
-                val serviceIntent = Intent(context, PlayerService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
-
-                // 2. Prepara Intent para MainActivity
-                val activityIntent = Intent(context, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                }
-
-                try {
-                    context.startActivity(activityIntent)
-                } catch (e: Exception) {
-                    Log.w(AppConstants.TAG_BOOT, "startActivity direto falhou: ${e.message}")
-                }
-
-                // 3. Garantia via AlarmManager RTC_WAKEUP para Android 10
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-                val pendingIntent = PendingIntent.getActivity(
-                    context,
-                    1002,
-                    activityIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                alarmManager?.set(
-                    AlarmManager.RTC_WAKEUP,
-                    System.currentTimeMillis() + 200L,
-                    pendingIntent
-                )
-
-                Log.i(AppConstants.TAG_BOOT, "PlayerService e MainActivity (com delay de 5s) iniciados pós-boot")
-            } catch (e: Exception) {
-                Log.e(AppConstants.TAG_BOOT, "Erro no BootReceiver: ${e.message}", e)
+        // Inicia o Foreground Service JÁ, dentro do onReceive: o Android permite
+        // isso para BOOT_COMPLETED / MY_PACKAGE_REPLACED, e o serviço mantém o
+        // processo vivo. Antes, um postDelayed de 5s rodava aqui — mas a TV Box
+        // (Android 10, pouca RAM) encerrava o processo antes e o app não abria.
+        // O atraso de 5s (System UI carregar) agora acontece dentro do serviço.
+        try {
+            val serviceIntent = Intent(context, PlayerService::class.java).apply {
+                putExtra(PlayerService.EXTRA_BRING_TO_FRONT_DELAY_MS, BOOT_ACTIVITY_DELAY_MS)
             }
-        }, 5_000L)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+            Log.i(AppConstants.TAG_BOOT, "PlayerService iniciado; MainActivity abre em ${BOOT_ACTIVITY_DELAY_MS / 1000}s")
+        } catch (e: Exception) {
+            Log.e(AppConstants.TAG_BOOT, "Erro ao iniciar PlayerService: ${e.message}", e)
+            // Último recurso: alarme que abre a MainActivity
+            val activityIntent = Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 1002, activityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            (context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager)?.set(
+                AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + BOOT_ACTIVITY_DELAY_MS, pendingIntent
+            )
+        }
+    }
+
+    private companion object {
+        const val BOOT_ACTIVITY_DELAY_MS = 5_000L
     }
 }
