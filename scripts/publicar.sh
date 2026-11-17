@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # ════════════════════════════════════════════════════════════════
-# Gera o pacote de atualização para subir na Hostinger.
+# Gera uma nova versão do ImpulsoTV para subir na Hostinger.
 #
-#   1. Aumente versionCode e versionName em app/build.gradle
-#   2. Rode:  ./scripts/publicar.sh
-#   3. Suba os 2 arquivos de dist/ para
-#      https://impulsotv.impulsolab.com.br/app/
-#      (primeiro o APK, por último o versao.json)
+#   ./scripts/publicar.sh          → próxima versão (ex.: 3.2.1 → 3.2.2)
+#   ./scripts/publicar.sh 3.3.0    → define o nome da versão
 #
-# As TV Boxes conferem o versao.json a cada hora e instalam ao ligar
-# ou de madrugada (3h–5h).
+# O script:
+#   1. soma 1 ao versionCode e atualiza o versionName em app/build.gradle
+#   2. gera o APK de release (assinado com a chave de release)
+#   3. cria dist/impulsotv-X.Y.Z.apk e dist/versao.json (com SHA-256)
+#   4. registra a versão no git (commit "release: X.Y.Z")
+#
+# Depois, suba os 2 arquivos de dist/ para
+#   https://impulsotv.impulsolab.com.br/app/
+# (primeiro o APK, por último o versao.json).
+# As TV Boxes conferem a cada hora e instalam ao ligar ou das 3h às 5h.
 # ════════════════════════════════════════════════════════════════
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,27 +25,51 @@ if [ ! -f keystore.properties ]; then
   exit 1
 fi
 
-VC=$(grep -m1 -E '^\s*versionCode ' app/build.gradle | awk '{print $2}')
-VN=$(grep -m1 -E '^\s*versionName ' app/build.gradle | sed -E 's/.*"(.*)".*/\1/')
-echo "▶ Gerando ImpulsoTV $VN (versionCode $VC)…"
+GRADLE_FILE=app/build.gradle
+OLD_VC=$(grep -m1 -E '^[[:space:]]*versionCode [0-9]+' "$GRADLE_FILE" | awk '{print $2}')
+OLD_VN=$(grep -m1 -E '^[[:space:]]*versionName "' "$GRADLE_FILE" | sed -E 's/.*"(.*)".*/\1/')
 
-./gradlew -q :app:assembleRelease
+NEW_VC=$((OLD_VC + 1))
+if [ $# -ge 1 ] && [ -n "$1" ]; then
+  NEW_VN="$1"
+else
+  # 3.2.1 → 3.2.2 (aumenta o último número)
+  IFS='.' read -r -a P <<< "$OLD_VN"
+  LAST=$(( ${#P[@]} - 1 ))
+  P[$LAST]=$(( ${P[$LAST]%%[!0-9]*} + 1 ))
+  NEW_VN=$(IFS='.'; echo "${P[*]}")
+fi
+
+echo "▶ ImpulsoTV $OLD_VN ($OLD_VC) → $NEW_VN ($NEW_VC)"
+sed -i '' -E "s/^([[:space:]]*versionCode )$OLD_VC$/\1$NEW_VC/" "$GRADLE_FILE"
+sed -i '' -E "s/^([[:space:]]*versionName )\"$OLD_VN\"$/\1\"$NEW_VN\"/" "$GRADLE_FILE"
+
+if ! ./gradlew -q :app:assembleRelease; then
+  echo "❌ Build falhou — revertendo a versão em $GRADLE_FILE"
+  git checkout -- "$GRADLE_FILE"
+  exit 1
+fi
 
 APK=app/build/outputs/apk/release/app-release.apk
-NOME="impulsotv-$VN.apk"
+NOME="impulsotv-$NEW_VN.apk"
 mkdir -p dist
+rm -f dist/*.apk dist/versao.json
 cp "$APK" "dist/$NOME"
 SHA=$(shasum -a 256 "dist/$NOME" | awk '{print $1}')
 
 cat > dist/versao.json <<JSON
 {
-  "versionCode": $VC,
-  "versionName": "$VN",
+  "versionCode": $NEW_VC,
+  "versionName": "$NEW_VN",
   "url": "$NOME",
   "sha256": "$SHA"
 }
 JSON
 
+git add "$GRADLE_FILE"
+git commit -q -m "release: $NEW_VN (versionCode $NEW_VC)" && echo "✔ Versão registrada no git"
+
+echo ""
 echo "✅ Pronto. Suba para https://impulsotv.impulsolab.com.br/app/ :"
 echo "   1) dist/$NOME"
 echo "   2) dist/versao.json   (por último)"

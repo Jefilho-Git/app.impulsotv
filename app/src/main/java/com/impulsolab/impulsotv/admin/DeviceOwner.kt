@@ -8,10 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
@@ -27,7 +23,7 @@ import com.impulsolab.impulsotv.update.UpdateManager
  *   - instala as próprias atualizações em silêncio (UpdateManager)
  *   - vira a tela inicial (HOME) sem o Android perguntar qual launcher
  *   - bloqueia o hotspot (o Ajustes da TV o ligava a cada boot, derrubando o Wi‑Fi)
- *   - religa o Wi‑Fi se alguém/algo desligar
+ *   - religa o Wi‑Fi se alguém/algo desligar (WifiGuard)
  *   - mantém a tela ligada enquanto estiver na tomada
  *
  * Sem o modo administrador, tudo isso é ignorado e o app funciona como antes.
@@ -77,32 +73,7 @@ object DeviceOwner {
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao aplicar políticas: ${e.message}")
         }
-        ensureWifiOn(ctx)
-    }
-
-    /**
-     * Religa o Wi‑Fi se estiver desligado e não houver cabo de rede.
-     * No Android 10+ só Device Owner/sistema podem fazer isso.
-     */
-    @Suppress("DEPRECATION")
-    fun ensureWifiOn(ctx: Context) {
-        if (!isActive(ctx)) return
-        try {
-            val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            if (wifi.isWifiEnabled || hasEthernet(ctx)) return
-            val ok = wifi.setWifiEnabled(true)
-            Log.w(TAG, "Wi‑Fi estava desligado — religando: ${if (ok) "ok" else "recusado"}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao religar Wi‑Fi: ${e.message}")
-        }
-    }
-
-    private fun hasEthernet(ctx: Context): Boolean {
-        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-        return cm.allNetworks.any {
-            cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
-        }
+        com.impulsolab.impulsotv.adb.WifiGuard.check(ctx)
     }
 
     /** Desfaz tudo e deixa de ser administrador (a TV volta ao normal). */

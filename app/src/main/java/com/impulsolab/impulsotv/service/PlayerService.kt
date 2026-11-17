@@ -84,7 +84,7 @@ class PlayerService : Service() {
     private val healthRunnable = object : Runnable {
         override fun run() {
             if (!isMonitoring) return
-            DeviceOwner.ensureWifiOn(this@PlayerService)
+            com.impulsolab.impulsotv.adb.WifiGuard.check(this@PlayerService)
             val elapsed = System.currentTimeMillis() - lastPingTime
             if (elapsed > AppConstants.ACTIVITY_DEAD_THRESHOLD_MS) {
                 Log.w(AppConstants.TAG_SERVICE, "[ACTIVITY-MONITOR] Activity inativa ou morta — reiniciando")

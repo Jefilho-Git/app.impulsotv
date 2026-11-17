@@ -13,6 +13,7 @@ import androidx.core.content.IntentCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.impulsolab.impulsotv.BuildConfig
+import com.impulsolab.impulsotv.adb.LocalAdb
 import com.impulsolab.impulsotv.admin.DeviceOwner
 import com.impulsolab.impulsotv.constants.AppConstants
 import com.impulsolab.impulsotv.service.PlayerService
@@ -49,9 +50,10 @@ import java.util.concurrent.TimeUnit
  *   - o APK precisa ser do MESMO pacote e de versão MAIOR
  *   - o Android ainda exige a MESMA assinatura (chave de release)
  *
- * Instalação:
- *   - modo administrador → silenciosa
- *   - sem ele → abre a tela "Instalar?" do Android (alguém aperta OK)
+ * Instalação (o primeiro caminho disponível):
+ *   1. modo administrador → silenciosa (PackageInstaller)
+ *   2. adb local (LocalAdb, opção C) → silenciosa ("cmd package install")
+ *   3. tela "Instalar?" do Android (alguém aperta OK)
  * Após instalar, o BootReceiver (MY_PACKAGE_REPLACED) reabre o app.
  * ════════════════════════════════════════════════════════════════
  */
@@ -232,6 +234,21 @@ class UpdateManager private constructor(context: Context) {
 
     private fun install(apk: File) {
         val silent = DeviceOwner.isActive(ctx)
+
+        // Opção C: sem modo administrador, instala pelo adb da própria TV
+        if (!silent && LocalAdb.isAvailable()) {
+            Log.i(TAG, "Instalando ${apk.name} (silenciosa via adb local)")
+            try {
+                if (LocalAdb.install(apk)) {
+                    Log.i(TAG, "Atualização instalada via adb local")
+                    return
+                }
+                Log.w(TAG, "adb local não conseguiu instalar — usando a confirmação do Android")
+            } catch (e: Exception) {
+                // Em caso de sucesso o sistema pode encerrar o processo no meio da leitura
+                Log.w(TAG, "adb local interrompido (${e.message}) — usando a confirmação do Android")
+            }
+        }
         if (!silent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !ctx.packageManager.canRequestPackageInstalls()) {
             Log.w(TAG, "Sem permissão 'Instalar apps desconhecidos' — o Android vai pedir para liberar")
