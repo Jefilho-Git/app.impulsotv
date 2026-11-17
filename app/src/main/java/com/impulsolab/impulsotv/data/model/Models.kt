@@ -18,7 +18,7 @@ data class Device(
     @SerializedName("device_code")           val deviceCode: String,
     @SerializedName("name")                  val name: String,
     @SerializedName("location")              val location: String?,
-    @SerializedName("playlist_id")           val playlistId: String,
+    @SerializedName("playlist_id")           val playlistId: String?,   // null: dispositivo ainda sem playlist
     @SerializedName("is_online")             val isOnline: Boolean = false,
     @SerializedName("is_connected")          val isConnected: Boolean = false,
     @SerializedName("connection_type")       val connectionType: String?,

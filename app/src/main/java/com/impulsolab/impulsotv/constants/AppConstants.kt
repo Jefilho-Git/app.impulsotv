@@ -60,6 +60,9 @@ object AppConstants {
     /** Tempo máximo que o watchdog fica suspenso com uma tela do sistema aberta */
     const val SYSTEM_SCREEN_GRACE_MS        = 120_000L
 
+    /** Nova checagem quando a playlist está vazia (o Realtime avisa antes, se ativo) */
+    const val PLAYLIST_EMPTY_RETRY_MS       = 30_000L
+
     /** Retry após erro de rede na busca de playlist */
     const val PLAYLIST_RETRY_DELAY_MS       = 8_000L
 

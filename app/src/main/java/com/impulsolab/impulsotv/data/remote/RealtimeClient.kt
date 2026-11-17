@@ -186,12 +186,15 @@ class RealtimeClient(
                 addProperty("filter", "id=eq.$deviceId")
             })
             // 2: mudanças na playlist (itens adicionados/removidos/reordenados)
-            add(JsonObject().apply {
-                addProperty("event", "*")
-                addProperty("schema", "public")
-                addProperty("table", "playlist_items")
-                addProperty("filter", "playlist_id=eq.$playlistId")
-            })
+            //    Sem playlist vinculada, um filtro vazio derrubaria o join inteiro
+            if (playlistId.isNotBlank()) {
+                add(JsonObject().apply {
+                    addProperty("event", "*")
+                    addProperty("schema", "public")
+                    addProperty("table", "playlist_items")
+                    addProperty("filter", "playlist_id=eq.$playlistId")
+                })
+            }
         }
 
         val config = JsonObject().apply {

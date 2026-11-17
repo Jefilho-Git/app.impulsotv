@@ -475,11 +475,21 @@ class MainActivity : AppCompatActivity() {
         tvDeviceName.text = name
     }
 
+    /** [EMPTY] Nenhuma mídia: logo + aviso em vez de tela preta. */
+    private fun showEmptyPlaylist() {
+        showSync()
+        progressSync.visibility = View.GONE
+        tvSyncStatus.text = "Nenhuma mídia nesta playlist.\nAdicione conteúdo no painel."
+    }
+
+    private val emptyRetryRunnable = Runnable { startPlayback() }
+
     private fun showSync() {
         Log.i(AppConstants.TAG_MAIN, "[STATE] → SYNC")
         pairingContainer.visibility = View.GONE
         playerContainer.visibility  = View.GONE
         syncContainer.visibility    = View.VISIBLE
+        progressSync.visibility     = View.VISIBLE
         progressSync.progress       = 0
         tvSyncStatus.text           = "0%"
     }
@@ -515,6 +525,7 @@ class MainActivity : AppCompatActivity() {
      * salva a sessão e vai para o player.
      */
     private fun attemptPairing(force: Boolean = false) {
+        if (pairingInProgress) return   // 6º caractere + Enter disparavam 2 pedidos
         val code = etCode.text.toString().trim().uppercase()
         if (code.length != 6) {
             tvPairingStatus.text = "O código deve ter 6 caracteres"
@@ -537,16 +548,27 @@ class MainActivity : AppCompatActivity() {
             when (response.status) {
                 "conflict" -> {
                     setPairingLoading(false)
-                    response.conflictInfo?.let { handleConnectionConflict(it, code) }
+                    handleConnectionConflict(
+                        response.conflictInfo
+                            ?: com.impulsolab.impulsotv.data.model.ConflictInfo(null, null, null),
+                        code
+                    )
                 }
                 "connected", "ok" -> {
-                    val device = response.device ?: return@launch
-                    // Salva sessão localmente
+                    val device = response.device
+                    if (device == null) {
+                        setPairingLoading(false)
+                        tvPairingStatus.text = "Resposta inválida do servidor. Tente novamente."
+                        Log.e(AppConstants.TAG_PAIRING, "[PAIRING-UI] status=${response.status} sem 'device' na resposta")
+                        return@launch
+                    }
+                    // Salva sessão localmente. Sem playlist ainda: salva vazio —
+                    // a device-api informa o playlist_id quando for vinculado.
                     session.saveSession(
                         deviceId   = device.id,
                         deviceCode = device.deviceCode,
                         deviceName = device.name,
-                        playlistId = device.playlistId
+                        playlistId = device.playlistId ?: ""
                     )
 
                     Log.i(AppConstants.TAG_PAIRING, "[PAIRING-UI] Pareado com sucesso: ${device.name}")
@@ -590,7 +612,10 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private var pairingInProgress = false
+
     private fun setPairingLoading(loading: Boolean) {
+        pairingInProgress = loading
         progressPairing.visibility = if (loading) View.VISIBLE else View.GONE
         etCode.isEnabled = !loading
     }
@@ -624,10 +649,16 @@ class MainActivity : AppCompatActivity() {
                         syncPlaylistId(result.playlistId, reconnectRealtime = false)
 
                         if (items.isEmpty()) {
-                            Log.e(AppConstants.TAG_PLAYER, "Playlist vazia ou erro ao carregar")
-                            handler.postDelayed({ startPlayback() }, AppConstants.PLAYLIST_RETRY_DELAY_MS)
+                            Log.w(AppConstants.TAG_PLAYER, "[EMPTY] Playlist vazia — aguardando conteúdo")
+                            showEmptyPlaylist()
+                            // Fica online (heartbeat + Realtime) para o painel ver o
+                            // aparelho e para começar assim que houver mídia
+                            session.getSession()?.let { startOnlineServices(it) }
+                            handler.removeCallbacks(emptyRetryRunnable)
+                            handler.postDelayed(emptyRetryRunnable, AppConstants.PLAYLIST_EMPTY_RETRY_MS)
                             return@launch
                         }
+                        handler.removeCallbacks(emptyRetryRunnable)
 
                         if (newHash == playlistHash && playlistItems.isNotEmpty()) {
                             Log.i(AppConstants.TAG_PLAYER, "[CACHE-VERSION] Conteúdo idêntico. Pulando sincronização de rede.")
@@ -1136,6 +1167,12 @@ class MainActivity : AppCompatActivity() {
                     when {
                         items.isEmpty() ->
                             Log.w(AppConstants.TAG_PLAYER, "[PLAYLIST-UPDATE] Playlist vazia no servidor; mantendo a atual")
+                        playlistItems.isEmpty() -> {
+                            // Nada tocando (tela de playlist vazia): começa já
+                            Log.i(AppConstants.TAG_PLAYER, "[PLAYLIST-UPDATE] Conteúdo chegou — iniciando reprodução")
+                            handler.removeCallbacks(emptyRetryRunnable)
+                            startPlayback()
+                        }
                         newHash == currentTarget ->
                             Log.d(AppConstants.TAG_PLAYER, "[PLAYLIST-UPDATE] Sem mudanças")
                         else -> {
