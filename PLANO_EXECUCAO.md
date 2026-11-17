@@ -217,4 +217,4 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | 3.1 | Auditoria do acesso anônimo: leitura de 4 tabelas (inclui códigos de pareamento) e ALTERAR/APAGAR aceitos pelo banco | concluído |
 | 17/11/2026 | 3.2/3.3 | SQL de endurecimento em `supabase/seguranca_rls.sql`; pedido de rede isolada à TI em `docs/pedido-ti-rede-tvs.md` | aguardando usuário |
 | 17/11/2026 | 3.2/3.4 | Escrita anônima fechada (revoke de tabela + por coluna). Verificado: só leitura, Realtime ok, Edge Functions gravando | concluído |
-| 17/11/2026 | Obs. | `last_checkin` de várias TVs com horas de atraso (o app envia o relógio da TV; a `device-heartbeat` parece gravar esse valor) — conferir relógio/fuso das TVs ou fazer a função usar `now()` | observação |
+| 17/11/2026 | Relógio | `last_checkin` com horas de atraso: TVs sem bateria de relógio atrasam quando ficam sem energia/internet (NTP funciona na rede). App 3.2.6 passa a usar a hora do servidor (cabeçalho `Date`) no heartbeat e na janela 3h–5h | concluído (publicar 3.2.6) |
