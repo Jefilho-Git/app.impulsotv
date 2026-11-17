@@ -277,6 +277,7 @@ Roteiro de migração das TVs e comandos de manutenção: [PLANO_EXECUCAO.md](PL
 
 ## 10. Pendências conhecidas
 
+- **Segurança do Supabase:** a chave pública ainda pode alterar/apagar `devices`, `playlist_items`, `media_files` e `playlists` e lê os códigos de pareamento. Correção pronta em `supabase/seguranca_rls.sql` (rodar no SQL Editor).
+- **Rede das TVs:** o adb da PROSB3000 aceita conexões sem autenticação na porta 5555. Pedido à TI em `docs/pedido-ti-rede-tvs.md`.
 - `player_status` do heartbeat é sempre `"playing"` (4.5), até confirmar os valores aceitos pela `device-heartbeat`.
-- Regras de acesso (RLS) do Supabase ainda permissivas (Fase 3 do plano).
-- Validação final na TV Box Android 10 real; os testes até agora foram no emulador Android 13.
+- Religamento do Wi‑Fi (`WifiGuard`) instalado, mas ainda não observado numa queda real causada pelo hotspot.

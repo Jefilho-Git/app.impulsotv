@@ -78,9 +78,9 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 - [x] **3.0 Habilitar Realtime nas tabelas** — SQL `alter publication supabase_realtime add table public.devices, public.playlist_items;` executado em 17/11.
   `alter publication supabase_realtime add table public.devices, public.playlist_items;`
   (ou Database → Publications → `supabase_realtime` → ligar as duas tabelas). Até lá, mudanças chegam pelo polling de 5 min.
-- [ ] **3.1 Auditar RLS atual** — listar as políticas reais de `devices`, `playlist_items`, `media_files` e o bucket `media-files`.
-- [ ] **3.2 Fechar escrita anônima** — remover `UPDATE ... TO anon USING (true)` em `devices`; toda escrita passa pelas Edge Functions (`device-connect`, `device-heartbeat`, `device-disconnect`) com service role.
-- [ ] **3.3 Restringir leitura anônima** — impedir listar todos os `devices`/códigos. Manter só o mínimo para o Realtime funcionar (avaliar filtrar por `connection_fingerprint` ou usar canal de broadcast emitido pelas functions).
+- [x] **3.1 Auditar acesso anônimo** (17/11, com a chave pública, sem alterar dados): LEITURA liberada em `devices` (8, inclui `device_code`), `playlist_items` (6), `media_files` (13), `playlists` (2); `profiles` protegida. ALTERAR/APAGAR aceitos (HTTP 204) nas 4 tabelas.
+- [ ] **3.2 Fechar escrita anônima** — SQL pronto em [`supabase/seguranca_rls.sql`](supabase/seguranca_rls.sql), **Etapa 1** (revoga INSERT/UPDATE/DELETE do `anon`; o app só grava via Edge Functions). **Rodar no SQL Editor** (usuário) e depois re-testar.
+- [ ] **3.3 Esconder códigos de pareamento** — opcional, **Etapa 2** do mesmo SQL (SELECT só nas colunas que o Realtime usa). Testar o Realtime de uma TV logo após.
 - [ ] **3.4 Testar o app de ponta a ponta** com as novas políticas (pareamento, heartbeat, Realtime, reset).
 
 > Atenção: 3.3 pode quebrar o Realtime de `postgres_changes`. Validar 1.1 antes e ter plano B (broadcast).
@@ -124,12 +124,12 @@ Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.
 - [x] **6.4 Teste no emulador** — Device Owner ativo; atualização silenciosa 3.2.0 → 3.2.1 com retorno automático; APK adulterado recusado.
 - [x] **6.5 Chave de release** — `~/Projetos/impulsotv-release.jks` (fora do repositório, `chmod 600`), alias `impulsotv`. Certificado `CN=ImpulsoLab, OU=ImpulsoTV, O=ImpulsoLab, L=Sao Paulo, ST=SP, C=BR`, **SHA-256 `9f2a80be5db16955cca8dcb08f1b19fb6670dcf4c2957f9693d062ca2e9bcf2a`**. Conferir um APK: `apksigner verify --print-certs <apk>`. ⚠️ Manter 2 cópias da chave + senha.
 - [x] **6.6 Primeira publicação** — `https://impulsotv.impulsolab.com.br/upload/app/` (pasta `public_html/upload/app`). `scripts/publicar.sh` aumenta a versão sozinho.
-- [~] **6.7 Migrar cada TV** — TV 172.16.50.215 migrada para `com.impulsolab.impulsotv` 3.2.0 (17/11): pareada, overlay liberado via adb, tocando. Demais TVs: pendentes.
+- [x] **6.7 Migrar cada TV** — todas as TVs migradas para a versão definitiva (`com.impulsolab.impulsotv`) em 17/11/2026.
   - ⚠️ **PROSB3000 não suporta modo administrador**: firmware sem `android.software.device_admin` (`dpm` recusa). Sem root (`ro.debuggable=0`, sem `su`). Atualização silenciosa e quiosque via Device Owner **indisponíveis nesse modelo** — ver alternativas (6.9).
   - ⚠️ Não há tela "Sobrepor a outros apps" no firmware: a permissão precisa ser liberada via adb (`appops set com.impulsolab.impulsotv SYSTEM_ALERT_WINDOW allow`), senão o app pode não abrir sozinho após o boot.
   - ⚠️ Segurança: `ro.adb.secure=0` — o adb pela rede aceita qualquer computador sem confirmação na tela.
 - [x] **6.9 Atualização sem modo administrador — opção C** — o app instala pelo adb da própria TV (`adb/LocalAdb.kt`, 127.0.0.1:5555). **Verificado na TV real (17/11):** 3.2.3 → 3.2.4 baixada da Hostinger, SHA-256 conferido, instalada em silêncio e de volta à frente em ~7s, tocando. Wi‑Fi religado pelo `WifiGuard` (ainda não testado com hotspot real).
-- [ ] **6.8 Validar na TV real** — reboot com hotspot bloqueado (Wi‑Fi deve manter), atualização silenciosa de madrugada.
+- [x] **6.8 Validar na TV real** — atualização silenciosa (3.2.3 → 3.2.4) via adb local e reboot (Wi‑Fi estável, app abre sozinho) validados na TV 172.16.50.215.
 
 ### ✅ Roteiro atual — preparar uma TV (PROSB3000), sem Mac
 1. **Opções do desenvolvedor**: Configurações → Sobre → clicar 7x em "Número da versão".
@@ -212,3 +212,7 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | Boot | Reboot da TV na 3.2.4: Wi‑Fi conectou, app abriu sozinho e tocou em ~1 min; `OpenWifiApService` iniciou mas foi encerrado sem ligar o hotspot — Wi‑Fi estável por 6+ min. WifiGuard não precisou agir (não testado em queda real) | verificado na TV real |
 | 17/11/2026 | 3.2.5 | App libera sozinho "sobrepor apps"/"instalar apps" via adb local; barra de sincronização corrigida | concluído |
 | 17/11/2026 | 6.7 | **2ª TV (172.16.59.177)** instalada manualmente pelo navegador, sem Mac (outra faixa de rede, inacessível do Mac); pareada e funcionando | concluído |
+| 17/11/2026 | 6.7 | Todas as TVs migradas; chave de release e senhas guardadas em local seguro (usuário) | concluído |
+| 17/11/2026 | — | **App pronto para uso.** Pendências opcionais: revisar RLS no Supabase (Fase 3), rede isolada para as TVs (TI), 4.5 e 5.4 | — |
+| 17/11/2026 | 3.1 | Auditoria do acesso anônimo: leitura de 4 tabelas (inclui códigos de pareamento) e ALTERAR/APAGAR aceitos pelo banco | concluído |
+| 17/11/2026 | 3.2/3.3 | SQL de endurecimento em `supabase/seguranca_rls.sql`; pedido de rede isolada à TI em `docs/pedido-ti-rede-tvs.md` | aguardando usuário |
