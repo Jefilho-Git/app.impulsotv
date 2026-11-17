@@ -990,6 +990,15 @@ class MainActivity : AppCompatActivity() {
         val displayMs = if (item.durationMs > 0) item.durationMs
                         else AppConstants.IMAGE_DEFAULT_DURATION_MS
 
+        // O Coil só carrega depois que o ImageView tem tamanho: uma view GONE
+        // nunca é medida e a imagem nunca chegava. Fica VISIBLE e transparente
+        // por cima do vídeo; showImageLayer() faz o fade-in ao carregar.
+        if (imageView.visibility != View.VISIBLE) {
+            imageView.animate().cancel()
+            imageView.alpha = 0f
+            imageView.visibility = View.VISIBLE
+        }
+
         val scale = Scale.FILL // Sempre preencher a tela inteira
 
         imageView.load(uri) {
