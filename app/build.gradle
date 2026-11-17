@@ -14,9 +14,11 @@ plugins {
 }
 
 // ── Assinatura de release (5.3) ──────────────────────────────────────
-// Lê ../keystore.properties (NÃO versionado — ver keystore.properties.example).
+// Lê keystore.properties (NÃO versionado — ver keystore.properties.example).
 // Sem o arquivo, o release cai na chave de debug, com aviso no build.
+// Procura no projeto e, se não houver, na pasta acima (fora do repositório)
 def keystorePropsFile = rootProject.file('keystore.properties')
+if (!keystorePropsFile.exists()) keystorePropsFile = rootProject.file('../keystore.properties')
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }

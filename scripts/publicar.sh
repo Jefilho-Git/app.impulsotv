@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [ ! -f keystore.properties ]; then
+if [ ! -f keystore.properties ] && [ ! -f ../keystore.properties ]; then
   echo "❌ keystore.properties não encontrado — sem a chave de release as TVs recusam a atualização."
   echo "   Veja ARCHITECTURE.md (seção Assinatura de release)."
   exit 1
