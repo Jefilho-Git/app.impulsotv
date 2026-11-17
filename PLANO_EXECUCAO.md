@@ -151,3 +151,6 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 3.1.0 | Instalada na TV Box por cima da 3.0.0 (pareamento e cache mantidos); conexão, Realtime e loop OK | verificado na TV real |
 | 17/11/2026 | Boot | Bug achado na TV: app não voltava à frente após atualizar/boot (processo morto antes do delay de 5s). Corrigido e verificado | concluído |
 | 17/11/2026 | 4.8 | Revertido: pergunta de launcher na TV | adiado |
+| 17/11/2026 | Boot | Reboot da TV Box: app abriu sozinho após o boot (correção do BootReceiver confirmada) | verificado na TV real |
+| 17/11/2026 | Offline | Tela preta após reboot: servidor caiu logo após o device-connect e o app não usava a playlist salva. Corrigido (`c9d4f32`), testado no emulador (modo avião) e instalado na TV | concluído |
+| 17/11/2026 | Wi‑Fi | Causa da queda do Wi‑Fi: o Ajustes da TV (`com.android.tv.settings` → `OpenWifiApService`) liga o **hotspot** a cada boot, o que derruba a conexão com a HSV-Wireless. Precisa desligar o hotspot na TV (ação do usuário) | pendente (usuário) |
