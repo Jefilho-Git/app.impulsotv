@@ -98,7 +98,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 - [x] **4.6 Pareamento robusto** — sem pedido duplicado, `device == null` tratado, conflito sem detalhes abre o diálogo, dispositivo sem playlist não trava. (`ca01422`)
 - [x] **4.7 Rotação automática pelo painel** — Android fica no padrão (horizontal); mídia marcada como vertical no painel → o app gira o player 270° sozinho. Só gira com a tela deitada (sem rotação dupla); `display_mode` do painel tem prioridade; mídia que não combina com a tela aparece inteira com faixas pretas. Ângulo em `AppConstants.VERTICAL_ROTATION_DEGREES` (trocar para 90f se ficar de cabeça para baixo). Verificado no emulador em paisagem. (`aa902cc`)
   - Decisão (17/11): TVs verticais **não** serão mais configuradas no Android; cada TV recebe só um tipo de mídia.
-- [x] **4.8 Modo quiosque completo** — intent-filter `HOME` + `DEFAULT`. (`9903257`)
+- [ ] **4.8 Modo quiosque completo** — **revertido** (`8ab1918`): o filtro HOME fazia a TV perguntar qual launcher usar. Volta na fase de atualização automática (Device Owner), sem pergunta.
 - [x] **4.9 Playlist vazia** — logo + aviso, fica online e começa assim que chegar mídia. (`ca01422`)
 
 ---
@@ -147,3 +147,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 5.1, 5.2, 5.5, 5.6 | Código morto removido, monitor de rede liberado, versão 3.1.0, ARCHITECTURE.md reescrita | concluído |
 | 17/11/2026 | 5.3 | Assinatura de release configurada; keystore a ser gerada pelo usuário | aguardando keystore |
 | 17/11/2026 | — | 3.1.0 testada no emulador: conexão 200, Realtime ok, loop e imagens ok | verificado |
+| 17/11/2026 | — | **TV Box oficial** acessada via adb (172.16.50.215): Proeletronic PROSB3000, Android 10, 1280x720, rotação do sistema bloqueada, conta Google presente, app assinado com a chave de debug deste Mac | — |
+| 17/11/2026 | 3.1.0 | Instalada na TV Box por cima da 3.0.0 (pareamento e cache mantidos); conexão, Realtime e loop OK | verificado na TV real |
+| 17/11/2026 | Boot | Bug achado na TV: app não voltava à frente após atualizar/boot (processo morto antes do delay de 5s). Corrigido e verificado | concluído |
+| 17/11/2026 | 4.8 | Revertido: pergunta de launcher na TV | adiado |
