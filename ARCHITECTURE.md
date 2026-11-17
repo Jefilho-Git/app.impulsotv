@@ -1,6 +1,6 @@
 # ImpulsoTV — Documentação de Arquitetura
 
-> **Versão:** 3.1.0 (versionCode 4) | **Atualizado:** 17/11/2026
+> **Versão:** 3.2.0 (versionCode 5) | **Atualizado:** 17/11/2026
 > **Alvo:** TV Box **Android 10+** (API 29), Android no padrão horizontal.
 > Player nativo (ExoPlayer + Coil) falando com o Supabase **só por Edge Functions** e Realtime.
 > Roteiro de evolução e histórico: [PLANO_EXECUCAO.md](PLANO_EXECUCAO.md).
@@ -241,6 +241,37 @@ adb shell cmd package set-home-activity com.impulsolab.impulsotv/.ui.MainActivit
 | `[FUNCTION]` | SupabaseClient | Chamadas às Edge Functions |
 | `[CLEANUP]` / `[DISK-FULL]` | MediaCacheManager | Limpeza e limite de espaço |
 | `[ACTIVITY-MONITOR]` / `[SCREEN-EVENT]` | PlayerService | Watchdog e retorno à frente |
+
+---
+
+## 11. Atualização automática e modo administrador (Fase 6)
+
+**Publicar uma versão:** aumente `versionCode`/`versionName` em `app/build.gradle`, rode
+`./scripts/publicar.sh` e suba `dist/` para `https://impulsotv.impulsolab.com.br/app/`
+(APK primeiro, `versao.json` por último).
+
+```json
+{ "versionCode": 5, "versionName": "3.2.0", "url": "impulsotv-3.2.0.apk", "sha256": "…" }
+```
+
+**Na TV** (`update/UpdateManager.kt`): confere a cada hora (1ª vez 2 min após iniciar) e instala
+só até **15 min após ligar** ou das **3h às 5h**. Antes de instalar, confere SHA-256, pacote e versão;
+o Android ainda exige a **mesma chave de release**. Após instalar, o `BootReceiver`
+(`MY_PACKAGE_REPLACED`) reabre o app. Em builds de debug a verificação automática fica desligada.
+
+**Modo administrador** (`admin/DeviceOwner.kt`), ativado uma vez por TV com
+`dpm set-device-owner` (sem contas no aparelho):
+
+| Política | Efeito |
+|---|---|
+| Instalação silenciosa | Atualiza sem ninguém apertar "Instalar" |
+| HOME = `HomeActivity` | O HOME abre o player (ponte invisível, sem segunda cópia) e não pergunta qual launcher |
+| `DISALLOW_CONFIG_TETHERING` | O Ajustes da TV não consegue ligar o hotspot no boot (que derrubava o Wi‑Fi) |
+| Wi‑Fi religado | Se desligado e sem cabo, o app religa (permitido só a Device Owner no Android 10+) |
+| `STAY_ON_WHILE_PLUGGED_IN=7` | Tela sempre ligada na tomada |
+
+Sem o modo administrador, a atualização abre a confirmação do Android e o resto é ignorado.
+Roteiro de migração das TVs e comandos de manutenção: [PLANO_EXECUCAO.md](PLANO_EXECUCAO.md), Fase 6.
 
 ---
 

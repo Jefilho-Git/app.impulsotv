@@ -114,6 +114,40 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ---
 
+## Fase 6 — Atualização automática (Hostinger) + modo administrador
+
+Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.impulsotv`); instalar **ao ligar (15 min) e de madrugada (3h–5h)**; servidor `https://impulsotv.impulsolab.com.br/app/`. Nenhuma TV usa conta Google.
+
+- [x] **6.1 Atualizador** — `versao.json` + APK na Hostinger; SHA-256, pacote e versão conferidos; reaproveita download. (`197ccd3`)
+- [x] **6.2 Modo administrador** — instalação silenciosa, HOME = ImpulsoTV sem perguntar, hotspot bloqueado, Wi‑Fi religado, tela sempre ligada. Comandos adb `CHECK_UPDATE` / `RELEASE_ADMIN`. (`197ccd3`)
+- [x] **6.3 Script de publicação** — `scripts/publicar.sh` gera `dist/impulsotv-X.Y.Z.apk` + `dist/versao.json`.
+- [x] **6.4 Teste no emulador** — Device Owner ativo; atualização silenciosa 3.2.0 → 3.2.1 com retorno automático; APK adulterado recusado.
+- [ ] **6.5 Gerar a chave de release** (usuário) — comando na ARCHITECTURE.md §8; guardar `.jks` + senhas fora do repositório (2 cópias).
+- [ ] **6.6 Primeira publicação** — `./scripts/publicar.sh` e subir `dist/` na Hostinger (APK primeiro, `versao.json` por último).
+- [ ] **6.7 Migrar cada TV** (uma vez por TV — roteiro abaixo).
+- [ ] **6.8 Validar na TV real** — reboot com hotspot bloqueado (Wi‑Fi deve manter), atualização silenciosa de madrugada.
+
+### Roteiro de migração por TV (6.7)
+```bash
+T=<IP_DA_TV>:5555
+adb connect $T
+adb -s $T shell dumpsys account | grep "Accounts:"      # precisa ser 0 (remova contas em Configurações → Contas)
+adb -s $T uninstall com.impulsolab.impulsotv.debug       # versão antiga (outra chave/pacote)
+adb -s $T install dist/impulsotv-X.Y.Z.apk               # versão definitiva
+adb -s $T shell dpm set-device-owner com.impulsolab.impulsotv/.admin.ImpulsoDeviceAdminReceiver
+adb -s $T shell am start -n com.impulsolab.impulsotv/.ui.MainActivity
+```
+Depois: digitar o código de pareamento na TV (a desinstalação apaga a sessão) e conceder "Sobrepor a outros apps" se for pedido.
+
+Comandos de manutenção:
+```bash
+P=com.impulsolab.impulsotv/com.impulsolab.impulsotv.admin.AdminCommandReceiver
+adb -s $T shell am broadcast -a com.impulsolab.impulsotv.CHECK_UPDATE -n $P   # atualizar agora
+adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # tirar o modo administrador
+```
+
+---
+
 ## Decisões pendentes (resumo)
 
 | ID | Pergunta | Resposta |
@@ -154,3 +188,5 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | Boot | Reboot da TV Box: app abriu sozinho após o boot (correção do BootReceiver confirmada) | verificado na TV real |
 | 17/11/2026 | Offline | Tela preta após reboot: servidor caiu logo após o device-connect e o app não usava a playlist salva. Corrigido (`c9d4f32`), testado no emulador (modo avião) e instalado na TV | concluído |
 | 17/11/2026 | Wi‑Fi | Causa da queda do Wi‑Fi: o Ajustes da TV (`com.android.tv.settings` → `OpenWifiApService`) liga o **hotspot** a cada boot, o que derruba a conexão com a HSV-Wireless. Precisa desligar o hotspot na TV (ação do usuário) | pendente (usuário) |
+| 17/11/2026 | 6.1–6.4 | Atualização automática + modo administrador implementados e testados no emulador (silenciosa, HOME sem pergunta, hotspot bloqueado, SHA-256) | concluído |
+| 17/11/2026 | 6.5–6.8 | Falta: chave de release, primeira publicação na Hostinger e migração das TVs | pendente |
