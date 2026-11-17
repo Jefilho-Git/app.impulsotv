@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Religar o Wi‑Fi (só tem efeito no modo administrador) -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- ─── Atualização automática (Fase 6) ──────────────────────────── -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- ─── Energia ──────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -57,6 +62,47 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ─── [KIOSK] Tela inicial — DESATIVADA por padrão. Só é ligada pelo
+             modo administrador (DeviceOwner.apply), que também a define como
+             padrão: assim o Android nunca pergunta "qual launcher usar". ── -->
+        <activity
+            android:name=".ui.HomeActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- ─── Modo administrador (Device Owner) ───────────────────────── -->
+        <receiver
+            android:name=".admin.ImpulsoDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Comandos de manutenção via adb (permissão DUMP: só o shell/sistema) -->
+        <receiver
+            android:name=".admin.AdminCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
+        <!-- Resultado da instalação de atualizações -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false" />
 
         <!-- ─── PlayerService — ForegroundService 24/7 ───────────────── -->
         <service

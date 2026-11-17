@@ -19,6 +19,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.impulsolab.impulsotv.R
+import com.impulsolab.impulsotv.admin.DeviceOwner
+import com.impulsolab.impulsotv.update.UpdateManager
 import com.impulsolab.impulsotv.constants.AppConstants
 import com.impulsolab.impulsotv.ui.MainActivity
 
@@ -82,6 +84,7 @@ class PlayerService : Service() {
     private val healthRunnable = object : Runnable {
         override fun run() {
             if (!isMonitoring) return
+            DeviceOwner.ensureWifiOn(this@PlayerService)
             val elapsed = System.currentTimeMillis() - lastPingTime
             if (elapsed > AppConstants.ACTIVITY_DEAD_THRESHOLD_MS) {
                 Log.w(AppConstants.TAG_SERVICE, "[ACTIVITY-MONITOR] Activity inativa ou morta — reiniciando")
@@ -97,6 +100,9 @@ class PlayerService : Service() {
         super.onCreate()
         acquireWakeLock()
         registerScreenReceiver()
+        // Fase 6: políticas do modo administrador (se ativo) e atualização automática
+        DeviceOwner.apply(this)
+        UpdateManager.get(this).start()
         Log.i(AppConstants.TAG_SERVICE, "PlayerService criado — WakeLock e ScreenReceiver ativos")
     }
 
@@ -134,6 +140,7 @@ class PlayerService : Service() {
         isMonitoring = false
         handler.removeCallbacksAndMessages(null)
         unregisterScreenReceiver()
+        UpdateManager.get(this).stop()
         releaseWakeLock()
         super.onDestroy()
         Log.w(AppConstants.TAG_SERVICE, "PlayerService destruído")

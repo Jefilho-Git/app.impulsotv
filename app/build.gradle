@@ -31,8 +31,8 @@ android {
         applicationId "com.impulsolab.impulsotv"
         minSdk 21
         targetSdk 34
-        versionCode 4
-        versionName "3.1.0"
+        versionCode 5
+        versionName "3.2.0"
 
         // ── Supabase config via BuildConfig ──────────────────────
         // Preencha com seus valores do Supabase Dashboard:

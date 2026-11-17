@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Modo administrador (Device Owner): o app não usa políticas de bloqueio de
+     senha/câmera etc. — só instalação silenciosa, tela inicial e restrições. -->
+<device-admin>
+    <uses-policies />
+</device-admin>

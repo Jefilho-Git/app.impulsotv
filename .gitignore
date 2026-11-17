@@ -28,3 +28,6 @@ keystore.properties
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Saída do scripts/publicar.sh (APK + versao.json para subir na Hostinger)
+dist/

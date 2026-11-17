@@ -111,6 +111,18 @@ object AppConstants {
      *  Se a imagem aparecer de cabeça para baixo na TV, troque para 90f. */
     const val VERTICAL_ROTATION_DEGREES = 270f
 
+    // ── [UPDATE] Atualização automática (Fase 6) ─────────────────────────
+    /** Pasta na Hostinger com versao.json + APK (gerados por scripts/publicar.sh) */
+    const val UPDATE_BASE_URL              = "https://impulsotv.impulsolab.com.br/app/"
+    /** 1ª verificação após o app iniciar (deixa o boot e a playlist assentarem) */
+    const val UPDATE_FIRST_CHECK_DELAY_MS  = 2L * 60 * 1000
+    const val UPDATE_CHECK_INTERVAL_MS     = 60L * 60 * 1000
+    /** Pode instalar até 15 min após ligar a TV… */
+    const val UPDATE_BOOT_WINDOW_MS        = 15L * 60 * 1000
+    /** …ou de madrugada, das 3h às 5h (hora local) */
+    const val UPDATE_NIGHT_START_HOUR      = 3
+    const val UPDATE_NIGHT_END_HOUR        = 5
+
     // ── [NOTIFICATION] ───────────────────────────────────────────────────
     const val NOTIFICATION_CHANNEL_ID   = "impulsotv_player"
     const val NOTIFICATION_CHANNEL_NAME = "ImpulsoTV Player"
