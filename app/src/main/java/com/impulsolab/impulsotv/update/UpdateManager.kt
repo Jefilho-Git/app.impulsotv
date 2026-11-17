@@ -30,7 +30,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
-import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 /**
@@ -67,6 +66,7 @@ class UpdateManager private constructor(context: Context) {
     private val updateDir = File(ctx.filesDir, "update").also { it.mkdirs() }
 
     private val http = OkHttpClient.Builder()
+        .addInterceptor(com.impulsolab.impulsotv.manager.ServerClock.interceptor)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
@@ -137,10 +137,10 @@ class UpdateManager private constructor(context: Context) {
         }
     }
 
-    /** Até X min após ligar a TV, ou de madrugada. */
+    /** Até X min após ligar a TV, ou de madrugada (pela hora do servidor). */
     private fun installWindowOpen(): Boolean {
         if (SystemClock.elapsedRealtime() < AppConstants.UPDATE_BOOT_WINDOW_MS) return true
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val hour = com.impulsolab.impulsotv.manager.ServerClock.localHour()
         return hour >= AppConstants.UPDATE_NIGHT_START_HOUR && hour < AppConstants.UPDATE_NIGHT_END_HOUR
     }
 

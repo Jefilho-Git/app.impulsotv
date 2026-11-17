@@ -36,6 +36,7 @@ class SupabaseClient {
     // ─── HTTP client ──────────────────────────────────────────────────────
 
     private val http = OkHttpClient.Builder()
+        .addInterceptor(com.impulsolab.impulsotv.manager.ServerClock.interceptor)   // hora do servidor
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
@@ -120,7 +121,8 @@ class SupabaseClient {
             "screen_orientation" to orientation,
             "is_online" to isOnline,
             "app_version" to "${com.impulsolab.impulsotv.BuildConfig.VERSION_NAME}-android",
-            "last_checkin" to System.currentTimeMillis()
+            // Hora do SERVIDOR (o relógio da TV atrasa sem internet/energia)
+            "last_checkin" to com.impulsolab.impulsotv.manager.ServerClock.nowMillis()
         )
         val body = gson.toJson(payload).toRequestBody(JSON)
         val request = Request.Builder().url(url).supabaseHeaders().post(body).build()
