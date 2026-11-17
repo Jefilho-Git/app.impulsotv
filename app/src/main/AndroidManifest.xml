@@ -49,7 +49,6 @@
             android:hardwareAccelerated="true"
             android:launchMode="singleTask"
             android:screenOrientation="fullUser"
-            android:directBootAware="true"
             android:windowSoftInputMode="stateVisible|adjustPan">
 
             <intent-filter>
@@ -63,18 +62,15 @@
         <service
             android:name=".service.PlayerService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback"
-            android:directBootAware="true" />
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- ─── BootReceiver ─────────────────────────────────────────── -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
-            android:exported="true"
-            android:directBootAware="true">
+            android:exported="true">
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />

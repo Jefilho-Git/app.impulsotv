@@ -15,6 +15,11 @@ import com.impulsolab.impulsotv.ui.MainActivity
 
 /**
  * BootReceiver — inicia o app e o serviço no boot frio e pós queda de energia.
+ *
+ * Não é directBootAware de propósito: sessão (SharedPreferences), playlist
+ * offline (Room) e mídias (filesDir) ficam no armazenamento que só abre após
+ * o desbloqueio do usuário. Por isso reagimos a BOOT_COMPLETED, nunca a
+ * LOCKED_BOOT_COMPLETED.
  * Aguarda 5 segundos para tolerar a inicialização pesada do SO em TV Boxes lentas.
  */
 class BootReceiver : BroadcastReceiver() {
@@ -23,7 +28,6 @@ class BootReceiver : BroadcastReceiver() {
         val acao = intent.action ?: return
         val validas = setOf(
             Intent.ACTION_BOOT_COMPLETED,
-            "android.intent.action.LOCKED_BOOT_COMPLETED",
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
             Intent.ACTION_MY_PACKAGE_REPLACED
