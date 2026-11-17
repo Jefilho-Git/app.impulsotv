@@ -122,7 +122,7 @@ Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.
 - [x] **6.2 Modo administrador** — instalação silenciosa, HOME = ImpulsoTV sem perguntar, hotspot bloqueado, Wi‑Fi religado, tela sempre ligada. Comandos adb `CHECK_UPDATE` / `RELEASE_ADMIN`. (`197ccd3`)
 - [x] **6.3 Script de publicação** — `scripts/publicar.sh` gera `dist/impulsotv-X.Y.Z.apk` + `dist/versao.json`.
 - [x] **6.4 Teste no emulador** — Device Owner ativo; atualização silenciosa 3.2.0 → 3.2.1 com retorno automático; APK adulterado recusado.
-- [ ] **6.5 Gerar a chave de release** (usuário) — comando na ARCHITECTURE.md §8; guardar `.jks` + senhas fora do repositório (2 cópias).
+- [x] **6.5 Chave de release** — `~/Projetos/impulsotv-release.jks` (fora do repositório, `chmod 600`), alias `impulsotv`. Certificado `CN=ImpulsoLab, OU=ImpulsoTV, O=ImpulsoLab, L=Sao Paulo, ST=SP, C=BR`, **SHA-256 `9f2a80be5db16955cca8dcb08f1b19fb6670dcf4c2957f9693d062ca2e9bcf2a`**. Conferir um APK: `apksigner verify --print-certs <apk>`. ⚠️ Manter 2 cópias da chave + senha.
 - [ ] **6.6 Primeira publicação** — `./scripts/publicar.sh` e subir `dist/` na Hostinger (APK primeiro, `versao.json` por último).
 - [ ] **6.7 Migrar cada TV** (uma vez por TV — roteiro abaixo).
 - [ ] **6.8 Validar na TV real** — reboot com hotspot bloqueado (Wi‑Fi deve manter), atualização silenciosa de madrugada.
@@ -190,3 +190,4 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | Wi‑Fi | Causa da queda do Wi‑Fi: o Ajustes da TV (`com.android.tv.settings` → `OpenWifiApService`) liga o **hotspot** a cada boot, o que derruba a conexão com a HSV-Wireless. Precisa desligar o hotspot na TV (ação do usuário) | pendente (usuário) |
 | 17/11/2026 | 6.1–6.4 | Atualização automática + modo administrador implementados e testados no emulador (silenciosa, HOME sem pergunta, hotspot bloqueado, SHA-256) | concluído |
 | 17/11/2026 | 6.5–6.8 | Falta: chave de release, primeira publicação na Hostinger e migração das TVs | pendente |
+| 17/11/2026 | 6.5 | Chave de release criada; release 3.2.0 assinado e verificado (pacote definitivo `com.impulsolab.impulsotv`) | concluído |
