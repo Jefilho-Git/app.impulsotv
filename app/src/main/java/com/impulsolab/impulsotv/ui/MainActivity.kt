@@ -10,7 +10,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.MediaMetadataRetriever
@@ -834,64 +833,72 @@ class MainActivity : AppCompatActivity() {
         val item = playlistItems[currentIndex]
         val isVertical = item.isVerticalDisplay
         val fileName = item.mediaFile.originalName ?: "Arquivo ${currentIndex + 1}"
+
+        // [ORIENTATION] Gira antes de escolher preencher/encaixar
+        wantVerticalScreen = item.isMarkedVertical
+        updatePlayerRotation()
+
         Log.i(AppConstants.TAG_PLAYER, "[PLAYLIST-LOOP] Item ${currentIndex + 1}/${playlistItems.size}: " +
-              "$fileName (${item.mediaFile.fileType}) | isVertical=$isVertical [meta=${item.metadata?.displayMode}, flat=${item.flatDisplayMode}, dim=${item.mediaFile.width}x${item.mediaFile.height}]")
+              "$fileName (${item.mediaFile.fileType}) | marcadoVertical=${item.isMarkedVertical} conteudoVertical=$isVertical fill=${shouldFillScreen(item)} [meta=${item.metadata?.displayMode}, flat=${item.flatDisplayMode}, dim=${item.mediaFile.width}x${item.mediaFile.height}]")
 
         if (item.isVideo) {
             playVideo(item)
         } else {
             showImage(item)
         }
-        
-        applyOrientation(isVertical)
     }
 
-    private fun applyOrientation(isVertical: Boolean) {
-        val target = if (isVertical) {
-            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT // Rotação para 270º (Vertical)
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE // Rotação 0º (Horizontal)
-        }
-        
-        try {
-            if (requestedOrientation != target) {
-                requestedOrientation = target
-            }
-        } catch (e: Exception) {
-            Log.w(AppConstants.TAG_PLAYER, "[ORIENTATION] Orientação do sistema não suportada: ${e.message}")
-        }
+    /**
+     * [ORIENTATION] O Android fica no padrão (horizontal). Quando a mídia vem
+     * marcada como vertical no painel, o APP gira o player 270° sozinho — sem
+     * configurar rotação no sistema da TV Box.
+     *
+     * Só gira se a tela estiver DEITADA. Se o sistema já estiver em pé (alguém
+     * girou no Android, ou é um celular), não gira de novo — a rotação dupla
+     * era o que deixava o conteúdo deitado e cortado.
+     */
+    private var wantVerticalScreen = false
 
-        // Força a rotação física da View para funcionar em qualquer TV Box (mesmo com HDMI fixo)
-        handler.post {
-            rotatePlayerContainer(isVertical)
-        }
+    private fun updatePlayerRotation() {
+        val root = playerContainer.parent as? View ?: return
+        val w = root.width
+        val h = root.height
+        if (w == 0 || h == 0) return   // ainda sem layout; o listener chama de novo
+
+        val rotate = wantVerticalScreen && w > h
+        val lp = playerContainer.layoutParams as? FrameLayout.LayoutParams ?: return
+        val targetRotation = if (rotate) AppConstants.VERTICAL_ROTATION_DEGREES else 0f
+        val targetW = if (rotate) h else FrameLayout.LayoutParams.MATCH_PARENT
+        val targetH = if (rotate) w else FrameLayout.LayoutParams.MATCH_PARENT
+        if (playerContainer.rotation == targetRotation && lp.width == targetW && lp.height == targetH) return
+
+        Log.i(AppConstants.TAG_PLAYER, "[ORIENTATION] Tela ${w}x$h → " +
+              if (rotate) "girando player ${targetRotation.toInt()}° (${h}x$w)" else "sem rotação")
+        playerContainer.rotation = targetRotation
+        lp.width = targetW
+        lp.height = targetH
+        lp.gravity = Gravity.CENTER
+        playerContainer.layoutParams = lp
     }
 
-    private fun rotatePlayerContainer(isVertical: Boolean) {
-        val displayMetrics = resources.displayMetrics
-        val rawWidth = displayMetrics.widthPixels
-        val rawHeight = displayMetrics.heightPixels
-
-        val screenWidth = maxOf(rawWidth, rawHeight)
-        val screenHeight = minOf(rawWidth, rawHeight)
-
-        val layoutParams = playerContainer.layoutParams as? FrameLayout.LayoutParams ?: return
-
-        if (isVertical) {
-            Log.i(AppConstants.TAG_PLAYER, "[ORIENTATION] Aplicando rotação física de View 270º (W:$screenHeight, H:$screenWidth)")
-            playerContainer.rotation = 270f
-            layoutParams.width = screenHeight
-            layoutParams.height = screenWidth
-            layoutParams.gravity = Gravity.CENTER
-        } else {
-            Log.i(AppConstants.TAG_PLAYER, "[ORIENTATION] Restaurando orientação 0º Horizontal")
-            playerContainer.rotation = 0f
-            layoutParams.width = FrameLayout.LayoutParams.MATCH_PARENT
-            layoutParams.height = FrameLayout.LayoutParams.MATCH_PARENT
-            layoutParams.gravity = Gravity.NO_GRAVITY
+    /** Orientação efetiva da área do player, já considerando a rotação do app. */
+    private fun isPlayerAreaVertical(): Boolean {
+        val root = playerContainer.parent as? View
+        val w = root?.width ?: 0
+        val h = root?.height ?: 0
+        if (w == 0 || h == 0) {
+            return wantVerticalScreen ||
+                   resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         }
-        playerContainer.layoutParams = layoutParams
+        return h > w || (wantVerticalScreen && w > h)
     }
+
+    /**
+     * @return true  → mídia e área do player têm a mesma orientação: preencher
+     *         false → orientações diferentes: mostrar inteira, com faixas pretas
+     */
+    private fun shouldFillScreen(item: PlaylistItem): Boolean =
+        item.isVerticalDisplay == isPlayerAreaVertical()
 
     /** Helper para detectar orientação de mídia remota se metadados falharem */
     private suspend fun detectMediaOrientation(url: String): Boolean = withContext(Dispatchers.IO) {
@@ -954,8 +961,9 @@ class MainActivity : AppCompatActivity() {
         // [TRANSITION] Se há imagem por cima, revela o vídeo no 1º quadro
         revealVideoOnFirstFrame = imageView.visibility == View.VISIBLE
 
-        // Modo de preenchimento total (Fill)
-        playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        // [ORIENTATION] Preenche quando combina com a tela; senão mostra inteiro
+        playerView.resizeMode = if (shouldFillScreen(item)) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                else AspectRatioFrameLayout.RESIZE_MODE_FIT
 
         exoPlayer?.apply {
             setMediaItem(MediaItem.fromUri(uri))
@@ -999,7 +1007,10 @@ class MainActivity : AppCompatActivity() {
             imageView.visibility = View.VISIBLE
         }
 
-        val scale = Scale.FILL // Sempre preencher a tela inteira
+        // [ORIENTATION] Preenche quando combina com a tela; senão mostra inteira
+        val fill = shouldFillScreen(item)
+        val scale = if (fill) Scale.FILL else Scale.FIT
+        imageView.scaleType = if (fill) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
 
         imageView.load(uri) {
             scale(scale)
@@ -1280,5 +1291,11 @@ class MainActivity : AppCompatActivity() {
         tvDeviceName     = findViewById(R.id.tvDeviceName)
 
         setupPairingInput()
+
+        // [ORIENTATION] Reaplica a rotação quando o tamanho da tela fica conhecido
+        // (primeiro layout) ou muda
+        (playerContainer.parent as? View)?.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            if (r - l != or - ol || b - t != ob - ot) handler.post { updatePlayerRotation() }
+        }
     }
 }

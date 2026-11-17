@@ -110,6 +110,22 @@ data class PlaylistItem(
     val isVideo: Boolean get() = mediaFile.isVideo
     val isImage: Boolean get() = mediaFile.isImage
 
+    /**
+     * Marcado como vertical NO PAINEL (display_mode / is_vertical). É o que decide
+     * girar a tela 270° — não usa as dimensões do arquivo, para uma imagem
+     * levemente "alta" nunca girar uma TV horizontal por engano.
+     */
+    val isMarkedVertical: Boolean get() {
+        // 1º: escolha explícita no painel (display_mode) — sempre vence
+        val mode = (metadata?.displayMode ?: flatDisplayMode)?.trim()?.lowercase()
+        when (mode) {
+            "vertical", "portrait" -> return true
+            "horizontal", "landscape" -> return false
+        }
+        // 2º: sem escolha no painel → flag is_vertical do arquivo
+        return mediaFile.isVertical || flatIsVertical == true
+    }
+
     /** Vertical = metadata diz "vertical"/"portrait" OU arquivo é intrinsecamente vertical */
     val isVerticalDisplay: Boolean get() {
         val metaMode = metadata?.displayMode

@@ -107,6 +107,10 @@ object AppConstants {
     // ── [PLAYER] ─────────────────────────────────────────────────────────
     const val DISPLAY_MODE_VERTICAL = "vertical"
 
+    /** Rotação aplicada pelo app quando a mídia é vertical e a tela está deitada.
+     *  Se a imagem aparecer de cabeça para baixo na TV, troque para 90f. */
+    const val VERTICAL_ROTATION_DEGREES = 270f
+
     // ── [NOTIFICATION] ───────────────────────────────────────────────────
     const val NOTIFICATION_CHANNEL_ID   = "impulsotv_player"
     const val NOTIFICATION_CHANNEL_NAME = "ImpulsoTV Player"
