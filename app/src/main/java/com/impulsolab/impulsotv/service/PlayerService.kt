@@ -35,6 +35,18 @@ import com.impulsolab.impulsotv.ui.MainActivity
  */
 class PlayerService : Service() {
 
+    companion object {
+        /**
+         * [ACTIVITY-MONITOR] Até este instante (epoch ms) o serviço NÃO traz a
+         * MainActivity para a frente. Usado enquanto uma tela do sistema
+         * (ex.: permissão de sobreposição) está aberta de propósito.
+         */
+        @Volatile var suppressBringToFrontUntil: Long = 0L
+
+        fun isBringToFrontSuppressed(): Boolean =
+            System.currentTimeMillis() < suppressBringToFrontUntil
+    }
+
     inner class LocalBinder : Binder() {
         fun getService() = this@PlayerService
     }
@@ -151,6 +163,13 @@ class PlayerService : Service() {
 
     fun bringMainActivityToFront() {
         handler.post {
+            if (isBringToFrontSuppressed()) {
+                Log.i(AppConstants.TAG_SERVICE, "[ACTIVITY-MONITOR] Trazer para a frente suspenso (tela do sistema aberta)")
+                lastPingTime = System.currentTimeMillis()
+                return@post
+            }
+            // Atualiza já: se algo abaixo falhar, não entra em loop a cada 15s
+            lastPingTime = System.currentTimeMillis()
             try {
                 val activityIntent = Intent(this, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -174,7 +193,17 @@ class PlayerService : Service() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 if (alarmManager != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // Android 12+: alarme exato exige SCHEDULE_EXACT_ALARM, que o app
+                    // não tem. Nesse caso usa o alarme inexato (sem SecurityException).
+                    val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        alarmManager.canScheduleExactAlarms()
+                    if (!canExact) {
+                        alarmManager.setAndAllowWhileIdle(
+                            AlarmManager.RTC_WAKEUP,
+                            System.currentTimeMillis() + 100L,
+                            pendingIntent
+                        )
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         alarmManager.setExactAndAllowWhileIdle(
                             AlarmManager.RTC_WAKEUP,
                             System.currentTimeMillis() + 100L,
@@ -189,7 +218,6 @@ class PlayerService : Service() {
                     }
                 }
 
-                lastPingTime = System.currentTimeMillis()
                 Log.i(AppConstants.TAG_SERVICE, "[SCREEN-EVENT] MainActivity solicitada para a frente")
             } catch (e: Exception) {
                 Log.e(AppConstants.TAG_SERVICE, "[SCREEN-EVENT] Erro ao trazer MainActivity para a frente: ${e.message}")

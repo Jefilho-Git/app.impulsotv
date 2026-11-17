@@ -347,13 +347,30 @@ class MainActivity : AppCompatActivity() {
         startPolling(sess.deviceCode)
     }
 
+    /**
+     * Pede a permissão "Sobrepor a outros apps" (necessária para o app se abrir
+     * sozinho no boot). Pede UMA vez por instalação — a marca fica num arquivo
+     * de preferências que o reset de pareamento não apaga — e suspende o
+     * watchdog do PlayerService enquanto a tela de configurações está aberta.
+     */
     private fun checkOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return
+
+        val devicePrefs = getSharedPreferences(AppConstants.PREF_DEVICE_FILE, MODE_PRIVATE)
+        if (devicePrefs.getBoolean(AppConstants.PREF_OVERLAY_ASKED, false)) {
+            Log.w(AppConstants.TAG_MAIN, "Permissão de sobreposição não concedida (já solicitada antes)")
+            return
+        }
+
+        run {
             try {
                 val intent = Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName")
                 )
+                PlayerService.suppressBringToFrontUntil =
+                    System.currentTimeMillis() + AppConstants.SYSTEM_SCREEN_GRACE_MS
+                devicePrefs.edit().putBoolean(AppConstants.PREF_OVERLAY_ASKED, true).apply()
                 startActivity(intent)
                 Toast.makeText(
                     this,
@@ -361,6 +378,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
+                PlayerService.suppressBringToFrontUntil = 0L
                 Log.e(AppConstants.TAG_MAIN, "Erro ao solicitar permissão overlay: ${e.message}")
             }
         }
@@ -384,6 +402,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // De volta ao app: o watchdog pode voltar a agir
+        PlayerService.suppressBringToFrontUntil = 0L
         setImmersive()
         exoPlayer?.play()
     }

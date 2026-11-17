@@ -54,6 +54,9 @@ object AppConstants {
     /** Threshold: se sem ping por este tempo, Service reinicia a Activity */
     const val ACTIVITY_DEAD_THRESHOLD_MS    = 30_000L
 
+    /** Tempo máximo que o watchdog fica suspenso com uma tela do sistema aberta */
+    const val SYSTEM_SCREEN_GRACE_MS        = 120_000L
+
     /** Retry após erro de rede na busca de playlist */
     const val PLAYLIST_RETRY_DELAY_MS       = 8_000L
 
@@ -75,6 +78,10 @@ object AppConstants {
     const val PREF_PLAYLIST_ID   = "playlist_id"
     const val PREF_FINGERPRINT   = "fingerprint"
     const val PREF_LAST_RESTART  = "last_restart_at"
+
+    // Preferências do aparelho — NÃO são apagadas no reset de pareamento
+    const val PREF_DEVICE_FILE     = "impulsotv_device"
+    const val PREF_OVERLAY_ASKED   = "overlay_permission_asked"
 
     // ── [TAGS] Logcat — filtre com: adb logcat -s ImpulsoTV.* ───────────
     const val TAG_APP      = "ImpulsoTV.App"
