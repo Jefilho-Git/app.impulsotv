@@ -36,7 +36,7 @@ Sem isso, qualquer mudança errada é difícil de desfazer.
 
 Código alterado em 17/11/2026; compila, **falta teste real**.
 
-- [~] **1.1 Realtime** — protocolo Phoenix v1 em JSON objeto, leitura de `payload.data`, sem `access_token`, reset só quando `restart_requested_at` muda, troca de playlist detectada. (`RealtimeClient.kt`)
+- [~] **1.1 Realtime** — protocolo Phoenix v1 em JSON objeto, leitura de `payload.data`, sem `access_token`, reset só quando `restart_requested_at` muda, troca de playlist detectada. (`RealtimeClient.kt`) **Emulador:** conexão e join OK (`phx_reply: ok`), mas o servidor recusa `postgres_changes` → ver **3.0**.
 - [~] **1.2 Recarga de playlist sem travar** — busca via `device-api` em segundo plano, aplica ao fim do item, retry em falha, pré-cache serializado. (`MainActivity.kt`, `MediaCacheManager.kt`)
 
 **Roteiro de teste:**
@@ -75,6 +75,9 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 3 — Segurança no Supabase (fora do app)
 
+- [ ] **3.0 Habilitar Realtime nas tabelas** — o servidor respondeu `Unable to subscribe to changes ... table: playlist_items` (17/11). No SQL Editor do Supabase:
+  `alter publication supabase_realtime add table public.devices, public.playlist_items;`
+  (ou Database → Publications → `supabase_realtime` → ligar as duas tabelas). Até lá, mudanças chegam pelo polling de 5 min.
 - [ ] **3.1 Auditar RLS atual** — listar as políticas reais de `devices`, `playlist_items`, `media_files` e o bucket `media-files`.
 - [ ] **3.2 Fechar escrita anônima** — remover `UPDATE ... TO anon USING (true)` em `devices`; toda escrita passa pelas Edge Functions (`device-connect`, `device-heartbeat`, `device-disconnect`) com service role.
 - [ ] **3.3 Restringir leitura anônima** — impedir listar todos os `devices`/códigos. Manter só o mínimo para o Realtime funcionar (avaliar filtrar por `connection_fingerprint` ou usar canal de broadcast emitido pelas functions).
@@ -86,17 +89,17 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 4 — Prioridade média
 
-- [ ] **4.1 Permissão de sobreposição sem briga com o watchdog** — pausar o monitor do `PlayerService` enquanto a tela de permissão estiver aberta; pedir a permissão só uma vez (lembrar se já pediu). (`MainActivity.kt`, `PlayerService.kt`)
-- [ ] **4.2 Alarme exato no Android 12+** — trocar `setExactAndAllowWhileIdle` por `set` (não precisa ser exato) ou declarar `SCHEDULE_EXACT_ALARM`; atualizar `lastPingTime` mesmo se falhar. (`PlayerService.kt`)
-- [ ] **4.3 Limite de cache** — apagar arquivos fora da playlist atual após 24–72 h e impor teto de espaço (ex.: 70% do livre). (`MediaCacheManager.kt`)
-  - [!] Decisão: qual o teto de espaço e o prazo para apagar mídia antiga?
-- [ ] **4.4 Tempo de imagem a partir do carregamento** — iniciar o timer no `onSuccess` do Coil. (`MainActivity.kt`, `showImage`)
-- [ ] **4.5 Heartbeat com dados reais** — `player_status` refletindo estado (syncing/playing/empty/error) e versão via `BuildConfig.VERSION_NAME`. (`MainActivity.kt`, `SupabaseClient.kt`)
-- [ ] **4.6 Pareamento robusto** — tratar `device == null`, conflito sem `conflictInfo`, e evitar pedido duplicado (6 letras + Enter). (`MainActivity.kt`)
+- [x] **4.1 Permissão de sobreposição sem briga com o watchdog** — pedida 1x por instalação; watchdog suspenso até 2 min com a tela de configurações aberta. (`011e71a`)
+- [x] **4.2 Alarme exato no Android 12+** — inexato quando não há permissão; erro sumiu do log no emulador. No Android 10 continua exato. (`011e71a`)
+- [x] **4.3 Limite de cache** — fora da playlist: apaga após 72 h sem uso; mantém 500 MB livres (apaga os menos usados; sem espaço toca via rede). Valores em `AppConstants`. (`3a6603b`)
+  - Valores adotados como padrão: 72 h e 500 MB livres — ajustar se necessário.
+- [x] **4.4 Tempo de imagem a partir do carregamento** — timer no `onSuccess` + limite de segurança de 30s; verificado no emulador (10s exatos). (`289e185`, `fd3f072`)
+- [~] **4.5 Heartbeat com dados reais** — versão via `BuildConfig` feita (`3a6603b`). `player_status` real **aguarda** confirmar quais valores a Edge Function `device-heartbeat` aceita.
+- [x] **4.6 Pareamento robusto** — sem pedido duplicado, `device == null` tratado, conflito sem detalhes abre o diálogo, dispositivo sem playlist não trava. (`ca01422`)
 - [ ] **4.7 Rotação única** — escolher **uma** estratégia (girar a View **ou** pedir orientação ao sistema), não as duas. (`MainActivity.kt`, `applyOrientation`)
   - [!] Decisão: as TVs verticais são montadas giradas para qual lado? Testar em pelo menos 2 modelos de TV Box.
-- [ ] **4.8 Modo quiosque completo** — adicionar intent-filter `HOME` + `DEFAULT` à `MainActivity` para poder virar launcher padrão. (`AndroidManifest.xml`)
-- [ ] **4.9 Playlist vazia** — mostrar mensagem/logo em vez de tela preta enquanto não há itens.
+- [x] **4.8 Modo quiosque completo** — intent-filter `HOME` + `DEFAULT`. (`9903257`)
+- [x] **4.9 Playlist vazia** — logo + aviso, fica online e começa assim que chegar mídia. (`ca01422`)
 
 ---
 
@@ -116,7 +119,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | ID | Pergunta | Resposta |
 |---|---|---|
 | 2.1 | Conflito no boot: tocar offline ou voltar ao pareamento? | Voltar ao pareamento (17/11/2026) |
-| 4.3 | Teto de espaço e prazo para apagar mídia antiga? | |
+| 4.3 | Teto de espaço e prazo para apagar mídia antiga? | Padrão: 72 h / 500 MB livres (ajustável) |
 | 4.7 | Orientação física das TVs verticais? | |
 | — | O app será publicado na Play Store? (muda regras de FullScreenIntent / permissões) | |
 
@@ -134,3 +137,8 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 2.1 | Reconexão em segundo plano após início offline; conflito → pareamento | aguardando teste em campo |
 | 17/11/2026 | 2.2 | Camadas vídeo/imagem + keepContentOnPlayerReset: sem tela preta | aguardando teste em campo |
 | 17/11/2026 | 2.3 | Direct Boot removido (manifest + BootReceiver) | aguardando teste em campo |
+| 17/11/2026 | — | Alvo definido: TV Box **Android 10+**; testes no emulador Android 13 (emulador A10 TV inviável no Mac ARM) | — |
+| 17/11/2026 | 4.1–4.6, 4.8, 4.9 | Fase 4 (exceto 4.7) implementada e testada no emulador | concluído (4.5 parcial) |
+| 17/11/2026 | 2.2 | Bug achado no teste: imagem não carregava com ImageView GONE; corrigido e verificado | concluído |
+| 17/11/2026 | 2.1 | Reabrir o mesmo aparelho: `device-connect` 200 ok (sem falso conflito) | verificado no emulador |
+| 17/11/2026 | 3.0 | Realtime recusa `postgres_changes` em `playlist_items`: publicação não habilitada no Supabase | pendente (Supabase) |
