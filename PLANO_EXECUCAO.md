@@ -116,7 +116,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 6 — Atualização automática (Hostinger) + modo administrador
 
-Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.impulsotv`); instalar **ao ligar (15 min) e de madrugada (3h–5h)**; servidor `https://impulsotv.impulsolab.com.br/app/`. Nenhuma TV usa conta Google.
+Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.impulsotv`); instalar **ao ligar (15 min) e de madrugada (3h–5h)**; servidor `https://impulsotv.impulsolab.com.br/upload/app/`. Nenhuma TV usa conta Google.
 
 - [x] **6.1 Atualizador** — `versao.json` + APK na Hostinger; SHA-256, pacote e versão conferidos; reaproveita download. (`197ccd3`)
 - [x] **6.2 Modo administrador** — instalação silenciosa, HOME = ImpulsoTV sem perguntar, hotspot bloqueado, Wi‑Fi religado, tela sempre ligada. Comandos adb `CHECK_UPDATE` / `RELEASE_ADMIN`. (`197ccd3`)

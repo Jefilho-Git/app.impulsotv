@@ -247,7 +247,7 @@ adb shell cmd package set-home-activity com.impulsolab.impulsotv/.ui.MainActivit
 ## 11. Atualização automática e modo administrador (Fase 6)
 
 **Publicar uma versão:** aumente `versionCode`/`versionName` em `app/build.gradle`, rode
-`./scripts/publicar.sh` e suba `dist/` para `https://impulsotv.impulsolab.com.br/app/`
+`./scripts/publicar.sh` e suba `dist/` para `https://impulsotv.impulsolab.com.br/upload/app/`
 (APK primeiro, `versao.json` por último).
 
 ```json

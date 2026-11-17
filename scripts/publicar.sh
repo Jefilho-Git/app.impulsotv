@@ -12,7 +12,7 @@
 #   4. registra a versão no git (commit "release: X.Y.Z")
 #
 # Depois, suba os 2 arquivos de dist/ para
-#   https://impulsotv.impulsolab.com.br/app/
+#   https://impulsotv.impulsolab.com.br/upload/app/
 # (primeiro o APK, por último o versao.json).
 # As TV Boxes conferem a cada hora e instalam ao ligar ou das 3h às 5h.
 # ════════════════════════════════════════════════════════════════
@@ -70,6 +70,6 @@ git add "$GRADLE_FILE"
 git commit -q -m "release: $NEW_VN (versionCode $NEW_VC)" && echo "✔ Versão registrada no git"
 
 echo ""
-echo "✅ Pronto. Suba para https://impulsotv.impulsolab.com.br/app/ :"
+echo "✅ Pronto. Suba para https://impulsotv.impulsolab.com.br/upload/app/ :"
 echo "   1) dist/$NOME"
 echo "   2) dist/versao.json   (por último)"

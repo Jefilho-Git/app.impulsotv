@@ -113,7 +113,7 @@ object AppConstants {
 
     // ── [UPDATE] Atualização automática (Fase 6) ─────────────────────────
     /** Pasta na Hostinger com versao.json + APK (gerados por scripts/publicar.sh) */
-    const val UPDATE_BASE_URL              = "https://impulsotv.impulsolab.com.br/app/"
+    const val UPDATE_BASE_URL              = "https://impulsotv.impulsolab.com.br/upload/app/"
     /** 1ª verificação após o app iniciar (deixa o boot e a playlist assentarem) */
     const val UPDATE_FIRST_CHECK_DELAY_MS  = 2L * 60 * 1000
     const val UPDATE_CHECK_INTERVAL_MS     = 60L * 60 * 1000
