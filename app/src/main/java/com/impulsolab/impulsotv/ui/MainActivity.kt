@@ -673,7 +673,29 @@ class MainActivity : AppCompatActivity() {
                     }
                     is PlaylistResult.Error -> {
                         Log.e(AppConstants.TAG_PLAYER, "Erro ao buscar playlist: ${result.message}")
-                        handler.postDelayed({ startPlayback() }, AppConstants.PLAYLIST_RETRY_DELAY_MS)
+                        if (playlistItems.isNotEmpty()) {
+                            // Já está tocando: mantém e só tenta de novo depois
+                            handler.postDelayed({ startPlayback() }, AppConstants.PLAYLIST_RETRY_DELAY_MS)
+                            return@launch
+                        }
+                        // [OFFLINE] Nada na tela e o servidor caiu (ex.: Wi‑Fi derrubado
+                        // logo após o device-connect): toca a playlist salva em vez de
+                        // deixar a tela preta, e reconecta em segundo plano.
+                        val cached = try {
+                            offlineCache.getOfflinePlaylist()
+                        } catch (e: Exception) {
+                            Log.e(AppConstants.TAG_PLAYER, "Erro ao ler playlist offline: ${e.message}")
+                            emptyList()
+                        }
+                        if (cached.isNotEmpty()) {
+                            Log.w(AppConstants.TAG_PLAYER, "[OFFLINE] Servidor inacessível — tocando playlist salva (${cached.size} itens)")
+                            playlistItems = cached
+                            startPlayback(fromOffline = true)
+                        } else {
+                            showSync()
+                            tvSyncStatus.text = "Aguardando conexão…"
+                        }
+                        startReconnectLoop()
                         return@launch
                     }
                 }
@@ -694,11 +716,16 @@ class MainActivity : AppCompatActivity() {
                 startOnlineServices(sess)
             }
 
-            // [SYNC] Baixa TODOS os arquivos antes de liberar o player
-            cacheManager.preCachePlaylist(playlistItems) { progress ->
-                handler.post {
-                    progressSync.progress = progress
-                    tvSyncStatus.text = "$progress%"
+            // [SYNC] Baixa TODOS os arquivos antes de liberar o player.
+            // Offline não há o que baixar: toca já o que está no aparelho (itens
+            // sem arquivo local são pulados pelo erro do player e voltam quando a
+            // reconexão disparar a atualização da playlist).
+            if (!fromOffline) {
+                cacheManager.preCachePlaylist(playlistItems) { progress ->
+                    handler.post {
+                        progressSync.progress = progress
+                        tvSyncStatus.text = "$progress%"
+                    }
                 }
             }
 
