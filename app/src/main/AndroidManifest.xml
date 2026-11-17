@@ -56,6 +56,15 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- [KIOSK] Permite definir o ImpulsoTV como tela inicial (launcher)
+                 da TV Box: o botão HOME passa a abrir o player.
+                 adb shell cmd package set-home-activity com.impulsolab.impulsotv/.ui.MainActivity -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <!-- ─── PlayerService — ForegroundService 24/7 ───────────────── -->
