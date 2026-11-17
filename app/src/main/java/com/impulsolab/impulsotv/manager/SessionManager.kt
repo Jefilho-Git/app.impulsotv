@@ -2,10 +2,8 @@ package com.impulsolab.impulsotv.manager
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.provider.Settings
 import android.util.Log
 import com.impulsolab.impulsotv.constants.AppConstants
-import java.security.MessageDigest
 
 /**
  * SessionManager
@@ -28,10 +26,6 @@ class SessionManager(private val context: Context) {
 
     // ─── Pairing state ────────────────────────────────────────────────────
 
-    /** True se o dispositivo já foi pareado e tem dados salvos */
-    val isPaired: Boolean
-        get() = prefs.getString(AppConstants.PREF_DEVICE_ID, null) != null
-
     data class Session(
         val deviceId: String,
         val deviceCode: String,
@@ -46,7 +40,7 @@ class SessionManager(private val context: Context) {
         val deviceCode = prefs.getString(AppConstants.PREF_DEVICE_CODE, null) ?: return null
         val deviceName = prefs.getString(AppConstants.PREF_DEVICE_NAME, null) ?: return null
         val playlistId = prefs.getString(AppConstants.PREF_PLAYLIST_ID, null) ?: return null
-        val fingerprint = prefs.getString(AppConstants.PREF_FINGERPRINT, null) ?: generateFingerprint()
+        val fingerprint = prefs.getString(AppConstants.PREF_FINGERPRINT, null) ?: getOrCreateFingerprint()
         return Session(deviceId, deviceCode, deviceName, playlistId, fingerprint)
     }
 
@@ -57,7 +51,7 @@ class SessionManager(private val context: Context) {
         deviceName: String,
         playlistId: String
     ) {
-        val fingerprint = generateFingerprint()
+        val fingerprint = getOrCreateFingerprint()
         prefs.edit()
             .putString(AppConstants.PREF_DEVICE_ID,   deviceId)
             .putString(AppConstants.PREF_DEVICE_CODE,  deviceCode)
@@ -109,11 +103,5 @@ class SessionManager(private val context: Context) {
         return fingerprint
     }
 
-    /** Deprecated: use getOrCreateFingerprint() */
-    fun generateFingerprint(): String = getOrCreateFingerprint()
 
-    private fun md5(input: String): String {
-        val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
 }

@@ -7,19 +7,16 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -54,12 +51,10 @@ import coil.size.Scale
 import com.impulsolab.impulsotv.R
 import com.impulsolab.impulsotv.constants.AppConstants
 import com.impulsolab.impulsotv.data.local.OfflinePlaylistCache
-import com.impulsolab.impulsotv.data.model.ConnectResponse
 import com.impulsolab.impulsotv.data.model.PlaylistItem
 import com.impulsolab.impulsotv.data.model.PlaylistResult
 import com.impulsolab.impulsotv.data.remote.RealtimeClient
 import com.impulsolab.impulsotv.data.remote.SupabaseClient
-import com.impulsolab.impulsotv.manager.HeartbeatManager
 import com.impulsolab.impulsotv.manager.MediaCacheManager
 import com.impulsolab.impulsotv.manager.NetworkStateManager
 import com.impulsolab.impulsotv.manager.SessionManager
@@ -106,15 +101,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cacheManager: MediaCacheManager
     private lateinit var networkManager: NetworkStateManager
     private lateinit var offlineCache: OfflinePlaylistCache
-    private var heartbeat: HeartbeatManager? = null
 
     // ─── Jobs ────────────────────────────────────────────────────────────
     private var heartbeatJob: Job? = null
     private var pollingJob: Job? = null
     private var reconnectJob: Job? = null
 
-    // ─── WakeLock ────────────────────────────────────────────────────────
-    private var wakeLock: PowerManager.WakeLock? = null
 
     // ─── ExoPlayer ───────────────────────────────────────────────────────
     private var exoPlayer: ExoPlayer? = null
@@ -233,7 +225,15 @@ class MainActivity : AppCompatActivity() {
         session        = SessionManager(this)
         supabase       = SupabaseClient()
         cacheManager   = MediaCacheManager(this)
-        networkManager = NetworkStateManager(this)
+        networkManager = NetworkStateManager(this) {
+            // Rede voltou: se estamos esperando o servidor, tenta já (2s)
+            handler.post {
+                if (reconnectJob?.isActive == true) {
+                    Log.i(AppConstants.TAG_MAIN, "[RECONNECT] Rede disponível — tentando agora")
+                    startReconnectLoop(initialDelayMs = 2_000L)
+                }
+            }
+        }
         offlineCache   = OfflinePlaylistCache(this)
         okHttpClient   = OkHttpClient()
 
@@ -247,7 +247,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         checkPermissionsAndStartService()
-        acquireWakeLock()
 
         // [STATE] Decisão inicial: pareado ou não?
         val sess = session.getSession()
@@ -308,12 +307,14 @@ class MainActivity : AppCompatActivity() {
      * (SERVER_RECONNECT_MIN_MS → SERVER_RECONNECT_MAX_MS). Ao conseguir,
      * liga heartbeat/Realtime/polling sem interromper o que está tocando.
      */
-    private fun startReconnectLoop() {
+    private fun startReconnectLoop(initialDelayMs: Long = AppConstants.SERVER_RECONNECT_MIN_MS) {
         reconnectJob?.cancel()
         reconnectJob = lifecycleScope.launch {
             var waitMs = AppConstants.SERVER_RECONNECT_MIN_MS
+            var nextDelay = initialDelayMs
             while (isActive) {
-                delay(waitMs)
+                delay(nextDelay)
+                nextDelay = waitMs
                 val sess = session.getSession() ?: return@launch
                 val response = supabase.connectDevice(sess.deviceCode, sess.fingerprint)
                 when (response?.status) {
@@ -332,6 +333,7 @@ class MainActivity : AppCompatActivity() {
                     else -> {
                         Log.d(AppConstants.TAG_MAIN, "[RECONNECT] Ainda sem servidor; nova tentativa em ${waitMs / 1000}s")
                         waitMs = (waitMs * 2).coerceAtMost(AppConstants.SERVER_RECONNECT_MAX_MS)
+                        nextDelay = waitMs
                     }
                 }
             }
@@ -436,8 +438,7 @@ class MainActivity : AppCompatActivity() {
         stopHeartbeat()
         stopPolling()
         stopReconnectLoop()
-        releaseWakeLock()
-        heartbeat?.stop()
+        networkManager.release()
         realtime.disconnect()
         releasePlayer()
         super.onDestroy()
@@ -900,21 +901,6 @@ class MainActivity : AppCompatActivity() {
     private fun shouldFillScreen(item: PlaylistItem): Boolean =
         item.isVerticalDisplay == isPlayerAreaVertical()
 
-    /** Helper para detectar orientação de mídia remota se metadados falharem */
-    private suspend fun detectMediaOrientation(url: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(url, emptyMap())
-            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0
-            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0
-            retriever.release()
-            height > width
-        } catch (e: Exception) {
-            Log.e("MediaOrientation", "Erro ao detectar orientação: ${e.message}")
-            false
-        }
-    }
-
     /**
      * [PLAYLIST-LOOP] Avança para o próximo item.
      * Se uma playlist nova já foi baixada em segundo plano, troca agora
@@ -1129,7 +1115,6 @@ class MainActivity : AppCompatActivity() {
         refreshJob = null
         refreshAgain = false
         pendingItems = null
-        heartbeat?.stop()
         realtime.disconnect()
         releasePlayer()
         revealVideoOnFirstFrame = false
@@ -1228,24 +1213,10 @@ class MainActivity : AppCompatActivity() {
     /** Assinatura da playlist: muda se qualquer item, ordem, arquivo, duração ou modo mudar */
     private fun playlistSignature(items: List<PlaylistItem>): Int =
         items.joinToString("|") {
-            "${it.id}:${it.orderIndex}:${it.mediaFile.fileUrl}:${it.duration}:${it.isVerticalDisplay}"
+            "${it.id}:${it.orderIndex}:${it.mediaFile.fileUrl}:${it.duration}:${it.isVerticalDisplay}:${it.isMarkedVertical}"
         }.hashCode()
 
     // ─── Service & Fullscreen ─────────────────────────────────────────────
-
-    private fun acquireWakeLock() {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        @Suppress("DEPRECATION")
-        wakeLock = pm.newWakeLock(
-            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
-            "ImpulsoTV:WakeLock"
-        ).apply { acquire(10 * 60 * 1000L) }
-    }
-
-    private fun releaseWakeLock() {
-        if (wakeLock?.isHeld == true) wakeLock?.release()
-        wakeLock = null
-    }
 
     private fun ensureServiceRunning() {
         val intent = Intent(this, PlayerService::class.java)

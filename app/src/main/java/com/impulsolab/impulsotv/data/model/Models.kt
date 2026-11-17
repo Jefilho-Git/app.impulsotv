@@ -43,8 +43,6 @@ data class MediaFile(
     @SerializedName("original_name")  val originalName: String?
 ) {
     val isVideo: Boolean get() = fileType == "video"
-    val isImage: Boolean get() = fileType == "image"
-    val aspectRatio: Float get() = if (height > 0) width.toFloat() / height.toFloat() else 16f / 9f
 }
 
 /**
@@ -108,7 +106,6 @@ data class PlaylistItem(
     }
 
     val isVideo: Boolean get() = mediaFile.isVideo
-    val isImage: Boolean get() = mediaFile.isImage
 
     /**
      * Marcado como vertical NO PAINEL (display_mode / is_vertical). É o que decide
