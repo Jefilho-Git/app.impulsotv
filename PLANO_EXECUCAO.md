@@ -96,8 +96,8 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 - [x] **4.4 Tempo de imagem a partir do carregamento** — timer no `onSuccess` + limite de segurança de 30s; verificado no emulador (10s exatos). (`289e185`, `fd3f072`)
 - [~] **4.5 Heartbeat com dados reais** — versão via `BuildConfig` feita (`3a6603b`). `player_status` real **aguarda** confirmar quais valores a Edge Function `device-heartbeat` aceita.
 - [x] **4.6 Pareamento robusto** — sem pedido duplicado, `device == null` tratado, conflito sem detalhes abre o diálogo, dispositivo sem playlist não trava. (`ca01422`)
-- [ ] **4.7 Rotação única** — escolher **uma** estratégia (girar a View **ou** pedir orientação ao sistema), não as duas. (`MainActivity.kt`, `applyOrientation`)
-  - [!] Decisão: as TVs verticais são montadas giradas para qual lado? Testar em pelo menos 2 modelos de TV Box.
+- [x] **4.7 Rotação automática pelo painel** — Android fica no padrão (horizontal); mídia marcada como vertical no painel → o app gira o player 270° sozinho. Só gira com a tela deitada (sem rotação dupla); `display_mode` do painel tem prioridade; mídia que não combina com a tela aparece inteira com faixas pretas. Ângulo em `AppConstants.VERTICAL_ROTATION_DEGREES` (trocar para 90f se ficar de cabeça para baixo). Verificado no emulador em paisagem. (`aa902cc`)
+  - Decisão (17/11): TVs verticais **não** serão mais configuradas no Android; cada TV recebe só um tipo de mídia.
 - [x] **4.8 Modo quiosque completo** — intent-filter `HOME` + `DEFAULT`. (`9903257`)
 - [x] **4.9 Playlist vazia** — logo + aviso, fica online e começa assim que chegar mídia. (`ca01422`)
 
@@ -120,7 +120,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 |---|---|---|
 | 2.1 | Conflito no boot: tocar offline ou voltar ao pareamento? | Voltar ao pareamento (17/11/2026) |
 | 4.3 | Teto de espaço e prazo para apagar mídia antiga? | Padrão: 72 h / 500 MB livres (ajustável) |
-| 4.7 | Orientação física das TVs verticais? | |
+| 4.7 | Orientação física das TVs verticais? | Android padrão (horizontal); app gira 270° quando o painel marca vertical; 1 tipo de mídia por TV |
 | — | O app será publicado na Play Store? (muda regras de FullScreenIntent / permissões) | |
 
 ---
@@ -143,4 +143,4 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 2.1 | Reabrir o mesmo aparelho: `device-connect` 200 ok (sem falso conflito) | verificado no emulador |
 | 17/11/2026 | 3.0 | Realtime recusa `postgres_changes` em `playlist_items`: publicação não habilitada no Supabase | pendente (Supabase) |
 | 17/11/2026 | 3.0, 1.1, 1.2 | Realtime habilitado no Supabase; mudança de playlist chega em segundos, sem tela preta | concluído |
-| 17/11/2026 | 4.7 | Reportado: conteúdo vertical aparece deitado e cortado (rotação dupla: sistema + View 270°) | em análise |
+| 17/11/2026 | 4.7 | Conteúdo vertical deitado e cortado (rotação dupla). Agora: rotação automática 270° pelo painel, sem configurar o Android | concluído (validar na TV Box real) |
