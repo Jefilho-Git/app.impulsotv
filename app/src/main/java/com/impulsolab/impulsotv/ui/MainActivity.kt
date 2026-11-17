@@ -200,6 +200,10 @@ class MainActivity : AppCompatActivity() {
     // [TRANSITION] Imagem → vídeo: esconder a imagem no primeiro quadro do vídeo
     private var revealVideoOnFirstFrame = false
 
+    // Identifica o item em exibição: callbacks atrasados (Coil, erro do
+    // ExoPlayer) de um item anterior são ignorados se o token mudou
+    private var itemToken = 0
+
     // Timer de imagem — cancelado quando o item muda
     private val imageTimerRunnable = Runnable { advanceToNext() }
 
@@ -771,8 +775,9 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         Log.e(AppConstants.TAG_PLAYER, "[ITEM-VIDEO] Erro: ${error.message}")
-                        // Pula para o próximo item em caso de erro
-                        handler.postDelayed({ advanceToNext() }, 2_000L)
+                        // Pula para o próximo item em caso de erro (se ainda for o mesmo item)
+                        val token = itemToken
+                        handler.postDelayed({ if (token == itemToken) advanceToNext() }, 2_000L)
                     }
                 })
             }
@@ -793,6 +798,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun playCurrentItem() {
         if (playlistItems.isEmpty()) return
+        itemToken++
 
         val item = playlistItems[currentIndex]
         val isVertical = item.isVerticalDisplay
@@ -949,6 +955,10 @@ class MainActivity : AppCompatActivity() {
         revealVideoOnFirstFrame = false
         exoPlayer?.stop()
 
+        val token = itemToken
+        val displayMs = if (item.durationMs > 0) item.durationMs
+                        else AppConstants.IMAGE_DEFAULT_DURATION_MS
+
         val scale = Scale.FILL // Sempre preencher a tela inteira
 
         imageView.load(uri) {
@@ -958,23 +968,26 @@ class MainActivity : AppCompatActivity() {
             placeholder(imageView.drawable)
             listener(
                 onSuccess = { _, _ ->
-                    Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Imagem carregada: ${item.mediaFile.originalName}")
+                    if (token != itemToken) return@listener   // item já mudou
+                    Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Imagem carregada; exibindo por ${displayMs / 1000}s: ${item.mediaFile.originalName}")
                     // [TRANSITION] Vídeo → imagem: fade só com a imagem pronta
                     showImageLayer()
+                    // Timer conta a partir da imagem NA TELA (não do início do download)
+                    handler.removeCallbacks(imageTimerRunnable)
+                    handler.postDelayed(imageTimerRunnable, displayMs)
                 },
                 onError = { _, err ->
+                    if (token != itemToken) return@listener
                     Log.e(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Erro ao carregar imagem: ${err.throwable.message}")
-                    handler.postDelayed({ advanceToNext() }, 2_000L)
+                    handler.postDelayed({ if (token == itemToken) advanceToNext() }, 2_000L)
                 }
             )
         }
 
-        // Timer: exibe pelo tempo configurado na playlist
-        val displayMs = if (item.durationMs > 0) item.durationMs
-                        else AppConstants.IMAGE_DEFAULT_DURATION_MS
-        handler.postDelayed(imageTimerRunnable, displayMs)
-
-        Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Exibindo por ${displayMs / 1000}s: ${item.mediaFile.originalName}")
+        // Rede de segurança: se a imagem não carregar nem falhar (download
+        // travado), não fica parada para sempre
+        handler.removeCallbacks(imageTimerRunnable)
+        handler.postDelayed(imageTimerRunnable, displayMs + AppConstants.IMAGE_LOAD_TIMEOUT_MS)
     }
 
     // ─── [TRANSITION] Camada de imagem sobre o vídeo ────────────────────

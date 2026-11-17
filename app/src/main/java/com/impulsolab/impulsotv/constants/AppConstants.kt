@@ -45,6 +45,9 @@ object AppConstants {
     /** Duração padrão de imagens sem duration definida */
     const val IMAGE_DEFAULT_DURATION_MS     = 30_000L
 
+    /** Tempo extra máximo para uma imagem carregar antes de pular o item */
+    const val IMAGE_LOAD_TIMEOUT_MS         = 30_000L
+
     /** Crossfade entre itens da playlist (ms) */
     const val TRANSITION_DURATION_MS        = 400L
 
