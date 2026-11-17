@@ -131,7 +131,17 @@ Decisões (17/11): chave de release **nova** (pacote definitivo `com.impulsolab.
 - [x] **6.9 Atualização sem modo administrador — opção C** — o app instala pelo adb da própria TV (`adb/LocalAdb.kt`, 127.0.0.1:5555). **Verificado na TV real (17/11):** 3.2.3 → 3.2.4 baixada da Hostinger, SHA-256 conferido, instalada em silêncio e de volta à frente em ~7s, tocando. Wi‑Fi religado pelo `WifiGuard` (ainda não testado com hotspot real).
 - [ ] **6.8 Validar na TV real** — reboot com hotspot bloqueado (Wi‑Fi deve manter), atualização silenciosa de madrugada.
 
-### Roteiro de migração por TV (6.7)
+### ✅ Roteiro atual — preparar uma TV (PROSB3000), sem Mac
+1. **Opções do desenvolvedor**: Configurações → Sobre → clicar 7x em "Número da versão".
+2. Ligar **Depuração USB** e **Depuração ADB pela rede** (o app usa para se atualizar, liberar permissões e religar o Wi‑Fi).
+3. Se existir a versão antiga `com.impulsolab.impulsotv.debug` → **desinstalar** (senão dois players brigam pela tela). Conta Google pode ser removida (não é usada).
+4. No navegador da TV: `https://impulsotv.impulsolab.com.br/upload/app/impulsotv-<versão>.apk` → instalar (liberar "apps desconhecidos" para o navegador).
+5. Abrir o ImpulsoTV (ele libera sozinho "sobrepor apps" pelo adb local) e **parear** com o código do painel.
+6. Teste: desligar da tomada e ligar → o app deve abrir sozinho e tocar.
+
+> As TVs ficam em faixas de rede diferentes (ex.: 172.16.50.x, 172.16.59.x) e o Mac só alcança a própria faixa — por isso o roteiro não depende do Mac.
+
+### Roteiro de migração por TV (6.7) — antigo, com Mac/adb
 ```bash
 T=<IP_DA_TV>:5555
 adb connect $T
@@ -200,3 +210,5 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | 6.6 | Endereço real é `/upload/app/` (`/app/` devolvia a página do painel) — corrigido | concluído |
 | 17/11/2026 | 6.9 | **Atualização automática funcionando na TV real**: 3.2.3 → 3.2.4 pela Hostinger, silenciosa via adb local | concluído |
 | 17/11/2026 | Boot | Reboot da TV na 3.2.4: Wi‑Fi conectou, app abriu sozinho e tocou em ~1 min; `OpenWifiApService` iniciou mas foi encerrado sem ligar o hotspot — Wi‑Fi estável por 6+ min. WifiGuard não precisou agir (não testado em queda real) | verificado na TV real |
+| 17/11/2026 | 3.2.5 | App libera sozinho "sobrepor apps"/"instalar apps" via adb local; barra de sincronização corrigida | concluído |
+| 17/11/2026 | 6.7 | **2ª TV (172.16.59.177)** instalada manualmente pelo navegador, sem Mac (outra faixa de rede, inacessível do Mac); pareada e funcionando | concluído |
