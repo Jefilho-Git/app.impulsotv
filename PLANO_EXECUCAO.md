@@ -79,9 +79,9 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
   `alter publication supabase_realtime add table public.devices, public.playlist_items;`
   (ou Database → Publications → `supabase_realtime` → ligar as duas tabelas). Até lá, mudanças chegam pelo polling de 5 min.
 - [x] **3.1 Auditar acesso anônimo** (17/11, com a chave pública, sem alterar dados): LEITURA liberada em `devices` (8, inclui `device_code`), `playlist_items` (6), `media_files` (13), `playlists` (2); `profiles` protegida. ALTERAR/APAGAR aceitos (HTTP 204) nas 4 tabelas.
-- [ ] **3.2 Fechar escrita anônima** — SQL pronto em [`supabase/seguranca_rls.sql`](supabase/seguranca_rls.sql), **Etapa 1** (revoga INSERT/UPDATE/DELETE do `anon`; o app só grava via Edge Functions). **Rodar no SQL Editor** (usuário) e depois re-testar.
+- [x] **3.2 Fechar escrita anônima** — aplicado em 17/11 (`supabase/seguranca_rls.sql`, etapa 1 + revogação por coluna). Chave pública agora **só lê**: alterar/apagar/inserir → `permission denied` nas 4 tabelas.
 - [ ] **3.3 Esconder códigos de pareamento** — opcional, **Etapa 2** do mesmo SQL (SELECT só nas colunas que o Realtime usa). Testar o Realtime de uma TV logo após.
-- [ ] **3.4 Testar o app de ponta a ponta** com as novas políticas (pareamento, heartbeat, Realtime, reset).
+- [x] **3.4 Testar o app** — Realtime com a chave pública: `Subscribed to PostgreSQL`; Edge Functions seguem gravando (`updated_at` avançando após a mudança).
 
 > Atenção: 3.3 pode quebrar o Realtime de `postgres_changes`. Validar 1.1 antes e ter plano B (broadcast).
 
@@ -216,3 +216,5 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | — | **App pronto para uso.** Pendências opcionais: revisar RLS no Supabase (Fase 3), rede isolada para as TVs (TI), 4.5 e 5.4 | — |
 | 17/11/2026 | 3.1 | Auditoria do acesso anônimo: leitura de 4 tabelas (inclui códigos de pareamento) e ALTERAR/APAGAR aceitos pelo banco | concluído |
 | 17/11/2026 | 3.2/3.3 | SQL de endurecimento em `supabase/seguranca_rls.sql`; pedido de rede isolada à TI em `docs/pedido-ti-rede-tvs.md` | aguardando usuário |
+| 17/11/2026 | 3.2/3.4 | Escrita anônima fechada (revoke de tabela + por coluna). Verificado: só leitura, Realtime ok, Edge Functions gravando | concluído |
+| 17/11/2026 | Obs. | `last_checkin` de várias TVs com horas de atraso (o app envia o relógio da TV; a `device-heartbeat` parece gravar esse valor) — conferir relógio/fuso das TVs ou fazer a função usar `now()` | observação |

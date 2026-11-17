@@ -36,8 +36,34 @@ revoke insert, update, delete on public.playlist_items from anon;
 revoke insert, update, delete on public.media_files    from anon;
 revoke insert, update, delete on public.playlists      from anon;
 
--- Depois desta etapa: confira que as TVs continuam tocando e que o painel
--- continua salvando playlists/dispositivos normalmente.
+-- ⚠️ No Supabase o UPDATE/INSERT também pode estar concedido COLUNA POR
+-- COLUNA — o revoke acima não remove esses. Rode também (aplicado em 17/11):
+do $$
+declare r record;
+begin
+  for r in
+    select distinct table_name, column_name, privilege_type
+    from information_schema.column_privileges
+    where table_schema = 'public' and grantee = 'anon'
+      and privilege_type in ('UPDATE', 'INSERT')
+      and table_name in ('devices','playlist_items','media_files','playlists')
+  loop
+    execute format('revoke %s (%I) on public.%I from anon',
+                   r.privilege_type, r.column_name, r.table_name);
+  end loop;
+end $$;
+
+-- Conferência: deve voltar VAZIO
+select table_name, privilege_type, count(*) as colunas
+from information_schema.column_privileges
+where table_schema = 'public' and grantee = 'anon'
+  and privilege_type in ('UPDATE','INSERT')
+  and table_name in ('devices','playlist_items','media_files','playlists')
+group by 1, 2;
+
+-- Verificado em 17/11 (chave pública): ALTERAR/APAGAR/INSERIR → "permission
+-- denied" nas 4 tabelas; leitura e Realtime ("Subscribed to PostgreSQL") OK;
+-- Edge Functions continuam gravando (updated_at avançando).
 
 
 -- ── ETAPA 2 — Esconder códigos de pareamento (opcional, testar) ──────

@@ -277,7 +277,8 @@ Roteiro de migração das TVs e comandos de manutenção: [PLANO_EXECUCAO.md](PL
 
 ## 10. Pendências conhecidas
 
-- **Segurança do Supabase:** a chave pública ainda pode alterar/apagar `devices`, `playlist_items`, `media_files` e `playlists` e lê os códigos de pareamento. Correção pronta em `supabase/seguranca_rls.sql` (rodar no SQL Editor).
+- **Segurança do Supabase:** desde 17/11 a chave pública **só lê** (`supabase/seguranca_rls.sql`). Ainda lê os códigos de pareamento — a etapa 2 (opcional) esconde.
+- **Relógio das TVs:** `last_checkin` usa o relógio da TV; algumas aparecem horas atrasadas.
 - **Rede das TVs:** o adb da PROSB3000 aceita conexões sem autenticação na porta 5555. Pedido à TI em `docs/pedido-ti-rede-tvs.md`.
 - `player_status` do heartbeat é sempre `"playing"` (4.5), até confirmar os valores aceitos pela `device-heartbeat`.
 - Religamento do Wi‑Fi (`WifiGuard`) instalado, mas ainda não observado numa queda real causada pelo hotspot.
