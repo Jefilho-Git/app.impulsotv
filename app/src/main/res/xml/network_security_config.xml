@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
+
+    <!-- Supabase principal — sempre HTTPS -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">supabase.in</domain>
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </domain-config>
+
+    <!--
+        CDNs de mídia — cleartext permitido.
+        Adicione aqui os domínios dos seus CDNs se usar AWS ou similar.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">amazonaws.com</domain>
+        <domain includeSubdomains="true">cloudfront.net</domain>
+    </domain-config>
+</network-security-config>

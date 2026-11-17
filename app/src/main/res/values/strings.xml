@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ImpulsoTV</string>
+    <string name="pairing_instruction">Acesse o dashboard, copie o código do dispositivo\ne digite abaixo para conectar</string>
+    <string name="pairing_hint">EX: UBPTXF</string>
+</resources>

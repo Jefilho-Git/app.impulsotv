@@ -1,0 +1,30 @@
+# Gradle / build
+.gradle/
+.kotlin/
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Configuração local (caminho do SDK, etc.)
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# Artefatos
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Chaves de assinatura — NUNCA versionar
+*.jks
+*.keystore
+keystore.properties
+
+# Sistema
+.DS_Store
+Thumbs.db
