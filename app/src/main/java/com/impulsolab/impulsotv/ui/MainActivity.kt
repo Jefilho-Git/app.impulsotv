@@ -197,6 +197,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // [TRANSITION] Imagem → vídeo: esconder a imagem no primeiro quadro do vídeo
+    private var revealVideoOnFirstFrame = false
+
     // Timer de imagem — cancelado quando o item muda
     private val imageTimerRunnable = Runnable { advanceToNext() }
 
@@ -723,6 +726,9 @@ class MainActivity : AppCompatActivity() {
             .also { player ->
                 playerView.player = player
                 playerView.useController = false   // sem controles — kiosk
+                // [TRANSITION] Mantém o último quadro do vídeo anterior até o
+                // primeiro quadro do próximo — sem flash preto entre vídeos
+                playerView.setKeepContentOnPlayerReset(true)
 
                 player.addListener(object : Player.Listener {
 
@@ -731,6 +737,15 @@ class MainActivity : AppCompatActivity() {
                             // [ITEM-VIDEO] Vídeo terminou → próximo item
                             Log.d(AppConstants.TAG_PLAYER, "[ITEM-VIDEO] Vídeo concluído")
                             advanceToNext()
+                        }
+                    }
+
+                    override fun onRenderedFirstFrame() {
+                        // [TRANSITION] Imagem → vídeo: só revela o vídeo quando
+                        // o primeiro quadro real já está na tela
+                        if (revealVideoOnFirstFrame) {
+                            revealVideoOnFirstFrame = false
+                            hideImageLayer()
                         }
                     }
 
@@ -864,13 +879,11 @@ class MainActivity : AppCompatActivity() {
     /**
      * [ITEM-VIDEO] Reproduz um item de vídeo via ExoPlayer.
      *
-     * Importante: ExoPlayer com setMediaItem + prepare + play
-     * inicia o buffer imediatamente. Para vídeos consecutivos,
-     * o pré-buffer do próximo item é feito automaticamente pelo
-     * ExoPlayer enquanto o atual ainda está tocando.
-     *
-     * display_mode vertical → RESIZE_MODE_FIT (pillarbox)
-     * display_mode padrão   → RESIZE_MODE_ZOOM (fill)
+     * Camadas: o PlayerView fica sempre por baixo e a imagem por cima.
+     *   vídeo → vídeo:  keepContentOnPlayerReset mantém o último quadro
+     *                   até o primeiro quadro do próximo (sem flash preto)
+     *   imagem → vídeo: a imagem continua na tela e só some (fade) em
+     *                   onRenderedFirstFrame, com o vídeo já desenhando
      */
     @SuppressLint("UnsafeOptInUsageError")
     private fun playVideo(item: PlaylistItem) {
@@ -881,8 +894,8 @@ class MainActivity : AppCompatActivity() {
             Uri.parse(uriStr)
         }
 
-        // [TRANSITION] Fade: image out, player in
-        crossfade(from = imageView, to = playerView)
+        // [TRANSITION] Se há imagem por cima, revela o vídeo no 1º quadro
+        revealVideoOnFirstFrame = imageView.visibility == View.VISIBLE
 
         // Modo de preenchimento total (Fill)
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -912,8 +925,8 @@ class MainActivity : AppCompatActivity() {
             uriStr
         }
 
-        // [TRANSITION] Fade: player out, imageView in
-        crossfade(from = playerView, to = imageView)
+        // O vídeo anterior já terminou; o último quadro fica por baixo
+        revealVideoOnFirstFrame = false
         exoPlayer?.stop()
 
         val scale = Scale.FILL // Sempre preencher a tela inteira
@@ -921,9 +934,13 @@ class MainActivity : AppCompatActivity() {
         imageView.load(uri) {
             scale(scale)
             crossfade(false)   // Coil crossfade desligado — usamos o nosso
+            // Imagem → imagem: mantém a anterior até a nova carregar (sem flash)
+            placeholder(imageView.drawable)
             listener(
                 onSuccess = { _, _ ->
                     Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Imagem carregada: ${item.mediaFile.originalName}")
+                    // [TRANSITION] Vídeo → imagem: fade só com a imagem pronta
+                    showImageLayer()
                 },
                 onError = { _, err ->
                     Log.e(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Erro ao carregar imagem: ${err.throwable.message}")
@@ -940,33 +957,38 @@ class MainActivity : AppCompatActivity() {
         Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Exibindo por ${displayMs / 1000}s: ${item.mediaFile.originalName}")
     }
 
-    // ─── [TRANSITION] Crossfade ───────────────────────────────────────────
+    // ─── [TRANSITION] Camada de imagem sobre o vídeo ────────────────────
 
-    /**
-     * [TRANSITION] Fade suave entre dois views.
-     * Evita tela preta durante a troca de mídia.
-     *
-     * Duração: TRANSITION_DURATION_MS (400ms por padrão)
-     */
-    private fun crossfade(from: View, to: View) {
-        if (to.visibility == View.VISIBLE) return   // já visível, nada a fazer
-
-        to.alpha = 0f
-        to.visibility = View.VISIBLE
-
-        to.animate()
+    /** Fade-in da imagem por cima do vídeo (TRANSITION_DURATION_MS). */
+    private fun showImageLayer() {
+        imageView.animate().cancel()
+        if (imageView.visibility != View.VISIBLE) {
+            imageView.alpha = 0f
+            imageView.visibility = View.VISIBLE
+        }
+        if (imageView.alpha >= 1f) return
+        imageView.animate()
             .alpha(1f)
             .setDuration(AppConstants.TRANSITION_DURATION_MS)
             .setListener(null)
             .start()
+    }
 
-        from.animate()
+    /** Fade-out da imagem, revelando o vídeo que já está desenhando por baixo. */
+    private fun hideImageLayer() {
+        imageView.animate().cancel()
+        if (imageView.visibility != View.VISIBLE) return
+        imageView.animate()
             .alpha(0f)
             .setDuration(AppConstants.TRANSITION_DURATION_MS)
             .setListener(object : AnimatorListenerAdapter() {
+                private var canceled = false
+                override fun onAnimationCancel(animation: Animator) { canceled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    from.visibility = View.GONE
-                    from.alpha = 1f   // reset para próxima vez
+                    // cancel() também chama onAnimationEnd: não esconder se outro fade assumiu
+                    if (canceled) return
+                    imageView.visibility = View.GONE
+                    imageView.alpha = 1f
                 }
             })
             .start()
@@ -1026,6 +1048,8 @@ class MainActivity : AppCompatActivity() {
         heartbeat?.stop()
         realtime.disconnect()
         releasePlayer()
+        revealVideoOnFirstFrame = false
+        imageView.animate().cancel()
         imageView.visibility = View.GONE
         playlistItems = emptyList()
         playlistHash = 0
