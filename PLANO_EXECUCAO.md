@@ -36,8 +36,8 @@ Sem isso, qualquer mudança errada é difícil de desfazer.
 
 Código alterado em 17/11/2026; compila, **falta teste real**.
 
-- [~] **1.1 Realtime** — protocolo Phoenix v1 em JSON objeto, leitura de `payload.data`, sem `access_token`, reset só quando `restart_requested_at` muda, troca de playlist detectada. (`RealtimeClient.kt`) **Emulador:** conexão e join OK (`phx_reply: ok`), mas o servidor recusa `postgres_changes` → ver **3.0**.
-- [~] **1.2 Recarga de playlist sem travar** — busca via `device-api` em segundo plano, aplica ao fim do item, retry em falha, pré-cache serializado. (`MainActivity.kt`, `MediaCacheManager.kt`)
+- [x] **1.1 Realtime** — protocolo Phoenix v1, `payload.data`, reset só quando `restart_requested_at` muda. **Verificado no emulador (17/11):** `Subscribed to PostgreSQL`, eventos de `devices` sem reset falso, mudança de playlist aplicada em segundos.
+- [x] **1.2 Recarga de playlist sem travar** — **verificado no emulador (17/11):** troca rápida, sem erros e sem tela preta.
 
 **Roteiro de teste:**
 - [ ] `adb logcat -s ImpulsoTV.Realtime ImpulsoTV.Player` mostra `Join enviado` seguido de `phx_reply: ok`.
@@ -75,7 +75,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 3 — Segurança no Supabase (fora do app)
 
-- [ ] **3.0 Habilitar Realtime nas tabelas** — o servidor respondeu `Unable to subscribe to changes ... table: playlist_items` (17/11). No SQL Editor do Supabase:
+- [x] **3.0 Habilitar Realtime nas tabelas** — SQL `alter publication supabase_realtime add table public.devices, public.playlist_items;` executado em 17/11.
   `alter publication supabase_realtime add table public.devices, public.playlist_items;`
   (ou Database → Publications → `supabase_realtime` → ligar as duas tabelas). Até lá, mudanças chegam pelo polling de 5 min.
 - [ ] **3.1 Auditar RLS atual** — listar as políticas reais de `devices`, `playlist_items`, `media_files` e o bucket `media-files`.
@@ -142,3 +142,5 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 2.2 | Bug achado no teste: imagem não carregava com ImageView GONE; corrigido e verificado | concluído |
 | 17/11/2026 | 2.1 | Reabrir o mesmo aparelho: `device-connect` 200 ok (sem falso conflito) | verificado no emulador |
 | 17/11/2026 | 3.0 | Realtime recusa `postgres_changes` em `playlist_items`: publicação não habilitada no Supabase | pendente (Supabase) |
+| 17/11/2026 | 3.0, 1.1, 1.2 | Realtime habilitado no Supabase; mudança de playlist chega em segundos, sem tela preta | concluído |
+| 17/11/2026 | 4.7 | Reportado: conteúdo vertical aparece deitado e cortado (rotação dupla: sistema + View 270°) | em análise |
