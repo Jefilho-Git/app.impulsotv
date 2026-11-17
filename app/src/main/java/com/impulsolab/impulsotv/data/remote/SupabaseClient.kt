@@ -126,7 +126,7 @@ class SupabaseClient {
             "player_status" to "playing",
             "screen_orientation" to orientation,
             "is_online" to isOnline,
-            "app_version" to "3.0.0-android",
+            "app_version" to "${com.impulsolab.impulsotv.BuildConfig.VERSION_NAME}-android",
             "last_checkin" to System.currentTimeMillis()
         )
         val body = gson.toJson(payload).toRequestBody(JSON)

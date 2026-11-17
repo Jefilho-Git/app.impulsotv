@@ -73,8 +73,11 @@ object AppConstants {
     /** Intervalo de polling para playlist (Fallback muito mais conservador) */
     const val PLAYLIST_POLLING_INTERVAL_MS  = 300_000L // 5 minutos (Realtime cuida do instantâneo)
 
-    /** Tempo de retenção de arquivos órfãos em cache (30 dias) */
-    const val CACHE_RETENTION_DAYS = 30L
+    /** Mídia fora da playlist atual é apagada após este tempo sem uso (72 h) */
+    const val CACHE_UNUSED_RETENTION_MS = 72L * 60 * 60 * 1000
+
+    /** Espaço livre mínimo preservado no aparelho ao baixar mídia (500 MB) */
+    const val CACHE_MIN_FREE_BYTES = 500L * 1024 * 1024
 
     // ── [SESSION] SharedPreferences keys ────────────────────────────────
     const val PREF_FILE          = "impulsotv_session"

@@ -93,6 +93,10 @@ class MediaCacheManager(context: Context) {
             return@withContext
         }
 
+        // Arquivos da playlist recebida nunca são apagados pela limpeza
+        val keep = items.map { localFileFor(resolveUrl(it.mediaFile.fileUrl).substringBefore('?')).name }.toSet()
+        cleanupCache(keep)   // libera espaço ANTES de baixar
+
         for (item in items) {
             val url = resolveUrl(item.mediaFile.fileUrl)
             val normalizedUrl = url.substringBefore('?')
@@ -102,8 +106,12 @@ class MediaCacheManager(context: Context) {
             val alreadyExists = localFile.exists() && (expectedSize <= 0 || localFile.length() == expectedSize)
 
             if (!alreadyExists) {
-                Log.i(AppConstants.TAG_CACHE, "[DOWNLOAD-START] Motivo: Cache inválido/ausente | Arquivo: ${item.mediaFile.originalName}")
-                downloadFile(url, localFile)
+                if (!ensureFreeSpace(expectedSize, keep)) {
+                    Log.w(AppConstants.TAG_CACHE, "[DISK-FULL] Sem espaço para ${item.mediaFile.originalName} (${expectedSize / 1024 / 1024} MB); será tocado via rede")
+                } else {
+                    Log.i(AppConstants.TAG_CACHE, "[DOWNLOAD-START] Motivo: Cache inválido/ausente | Arquivo: ${item.mediaFile.originalName}")
+                    downloadFile(url, localFile)
+                }
             } else {
                 Log.v(AppConstants.TAG_CACHE, "[DOWNLOAD-SKIP] Já em cache: ${item.mediaFile.originalName}")
             }
@@ -112,34 +120,57 @@ class MediaCacheManager(context: Context) {
             onProgress((processed * 100) / items.size)
         }
 
-        cleanupOldCache() // Agora usa política de 30 dias
     } }
 
     /**
-     * Nova política de limpeza:
-     * Remove apenas arquivos que NÃO foram acessados nos últimos 30 dias.
+     * Política de limpeza (4.3):
+     *   - arquivos FORA da playlist atual sem uso há CACHE_UNUSED_RETENTION_MS → apagados
+     *   - .tmp de downloads interrompidos há mais de 1 h → apagados
+     *   - arquivos da playlist atual (keep) → nunca apagados
+     * O "uso" é o lastModified, renovado a cada reprodução em getPlayableUri().
      */
-    private fun cleanupOldCache() {
+    private fun cleanupCache(keep: Set<String>) {
         val now = System.currentTimeMillis()
-        val retentionMs = AppConstants.CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000L
-        
         var deletedCount = 0
         var deletedBytes = 0L
 
         cacheDir.listFiles()?.forEach { file ->
-            if (file.isFile && !file.name.endsWith(".tmp")) {
-                val lastAccess = file.lastModified()
-                if (now - lastAccess > retentionMs) {
-                    deletedBytes += file.length()
-                    file.delete()
-                    deletedCount++
-                }
+            if (!file.isFile || file.name in keep) return@forEach
+            val age = now - file.lastModified()
+            val expired = if (file.name.endsWith(".tmp")) age > 60 * 60 * 1000L
+                          else age > AppConstants.CACHE_UNUSED_RETENTION_MS
+            if (expired) {
+                deletedBytes += file.length()
+                if (file.delete()) deletedCount++
             }
         }
-        
+
         if (deletedCount > 0) {
-            Log.i(AppConstants.TAG_CACHE, "[CLEANUP] Removidos $deletedCount arquivos antigos (${deletedBytes / 1024 / 1024} MB)")
+            Log.i(AppConstants.TAG_CACHE, "[CLEANUP] Removidos $deletedCount arquivos fora da playlist (${deletedBytes / 1024 / 1024} MB)")
         }
+    }
+
+    /**
+     * Garante espaço para baixar `bytesNeeded` mantendo CACHE_MIN_FREE_BYTES livres.
+     * Se faltar, apaga arquivos fora da playlist (os menos usados primeiro).
+     * @return false se mesmo assim não couber — o item toca via rede.
+     */
+    private fun ensureFreeSpace(bytesNeeded: Long, keep: Set<String>): Boolean {
+        val needed = bytesNeeded.coerceAtLeast(0L) + AppConstants.CACHE_MIN_FREE_BYTES
+        if (cacheDir.usableSpace >= needed) return true
+
+        val candidates = cacheDir.listFiles()
+            ?.filter { it.isFile && it.name !in keep }
+            ?.sortedBy { it.lastModified() }
+            .orEmpty()
+        for (file in candidates) {
+            val size = file.length()
+            if (file.delete()) {
+                Log.i(AppConstants.TAG_CACHE, "[DISK-FULL] Liberado ${size / 1024 / 1024} MB: ${file.name}")
+            }
+            if (cacheDir.usableSpace >= needed) return true
+        }
+        return cacheDir.usableSpace >= needed
     }
 
     /** Limpa todo o cache local (apenas em caso de desvinculação total) */
