@@ -13,6 +13,16 @@ plugins {
     id 'com.google.devtools.ksp'
 }
 
+// ── Assinatura de release (5.3) ──────────────────────────────────────
+// Lê ../keystore.properties (NÃO versionado — ver keystore.properties.example).
+// Sem o arquivo, o release cai na chave de debug, com aviso no build.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+def hasReleaseKey = keystorePropsFile.exists() && keystoreProps['storeFile']
+
 android {
     namespace 'com.impulsolab.impulsotv'
     compileSdk 34
@@ -31,12 +41,28 @@ android {
         buildConfigField "String", "SUPABASE_ANON_KEY", '"sb_publishable_GMWgH4XbaVIfPxpsySCKEg_TXae9-v8"'
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile     rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias      keystoreProps['keyAlias']
+                keyPassword   keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
+            if (hasReleaseKey) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.warn("⚠️  keystore.properties ausente — release assinado com a chave de DEBUG")
+                signingConfig signingConfigs.debug
+            }
         }
         debug {
             applicationIdSuffix ".debug"
