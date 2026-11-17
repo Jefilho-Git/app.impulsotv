@@ -199,3 +199,4 @@ adb -s $T shell am broadcast -a com.impulsolab.impulsotv.RELEASE_ADMIN -n $P  # 
 | 17/11/2026 | 6.7 | TV 172.16.50.215 pareada na 3.2.0 definitiva; overlay liberado via adb; playlist de 4 vídeos tocando | concluído (1ª TV) |
 | 17/11/2026 | 6.6 | Endereço real é `/upload/app/` (`/app/` devolvia a página do painel) — corrigido | concluído |
 | 17/11/2026 | 6.9 | **Atualização automática funcionando na TV real**: 3.2.3 → 3.2.4 pela Hostinger, silenciosa via adb local | concluído |
+| 17/11/2026 | Boot | Reboot da TV na 3.2.4: Wi‑Fi conectou, app abriu sozinho e tocou em ~1 min; `OpenWifiApService` iniciou mas foi encerrado sem ligar o hotspot — Wi‑Fi estável por 6+ min. WifiGuard não precisou agir (não testado em queda real) | verificado na TV real |
