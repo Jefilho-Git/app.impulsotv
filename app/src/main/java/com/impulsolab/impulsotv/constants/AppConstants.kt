@@ -57,6 +57,10 @@ object AppConstants {
     /** Retry após erro de rede na busca de playlist */
     const val PLAYLIST_RETRY_DELAY_MS       = 8_000L
 
+    /** Reconexão ao servidor após início offline: espera inicial e máxima (dobra a cada falha) */
+    const val SERVER_RECONNECT_MIN_MS       = 10_000L
+    const val SERVER_RECONNECT_MAX_MS       = 60_000L
+
     /** Intervalo de polling para playlist (Fallback muito mais conservador) */
     const val PLAYLIST_POLLING_INTERVAL_MS  = 300_000L // 5 minutos (Realtime cuida do instantâneo)
 

@@ -112,6 +112,7 @@ class MainActivity : AppCompatActivity() {
     // ─── Jobs ────────────────────────────────────────────────────────────
     private var heartbeatJob: Job? = null
     private var pollingJob: Job? = null
+    private var reconnectJob: Job? = null
 
     // ─── WakeLock ────────────────────────────────────────────────────────
     private var wakeLock: PowerManager.WakeLock? = null
@@ -243,47 +244,104 @@ class MainActivity : AppCompatActivity() {
         acquireWakeLock()
 
         // [STATE] Decisão inicial: pareado ou não?
-        if (session.isPaired) {
-            val sess = session.getSession()
-            if (sess != null) {
-                showPlayer()
-                lifecycleScope.launch {
-                    try {
-                        val response = supabase.connectDevice(sess.deviceCode, sess.fingerprint)
-                        if (response?.status == "connected" || response?.status == "ok") {
-                        // Inicia a sincronização antes do player
-                        startPlayback()
-                    } else if (response?.status == "disconnected") {
-                            Log.w(AppConstants.TAG_MAIN, "[SIGNAL] Dispositivo desconectado pelo servidor")
-                            onRestartRequested()
-                        } else {
-                            Log.w(AppConstants.TAG_MAIN, "Conflito ou erro na reconexão: ${response?.status}. Tentando offline...")
-                            val cachedItems = offlineCache.getOfflinePlaylist()
-                            if (cachedItems.isNotEmpty()) {
-                                Log.i(AppConstants.TAG_PLAYER, "Iniciando via cache offline")
-                                playlistItems = cachedItems
-                                startPlayback(fromOffline = true)
-                            } else {
-                                showPairing()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(AppConstants.TAG_MAIN, "Erro na reconexão: ${e.message}")
-                        val cachedItems = offlineCache.getOfflinePlaylist()
-                        if (cachedItems.isNotEmpty()) {
-                            playlistItems = cachedItems
-                            startPlayback(fromOffline = true)
-                        } else {
-                            showPairing()
-                        }
-                    }
-                }
-            } else {
-                showPairing()
-            }
+        val sess = session.getSession()
+        if (sess != null) {
+            showPlayer()
+            lifecycleScope.launch { resumeSession(sess) }
         } else {
             showPairing()
         }
+    }
+
+    // ─── [RECONNECT] Retomada da sessão e reconexão ao servidor ──────────
+
+    /**
+     * [RECONNECT] Retoma uma sessão salva ao abrir o app.
+     *   connected/ok  → reprodução online normal
+     *   disconnected  → dashboard desvinculou: reset completo
+     *   conflict      → outro aparelho assumiu o código: volta ao pareamento
+     *   sem resposta  → toca o cache offline (se houver) e tenta reconectar
+     *                   em segundo plano até o servidor responder
+     */
+    private suspend fun resumeSession(sess: SessionManager.Session) {
+        val response = supabase.connectDevice(sess.deviceCode, sess.fingerprint)
+        when (response?.status) {
+            "connected", "ok" -> startPlayback()
+            "disconnected" -> {
+                Log.w(AppConstants.TAG_MAIN, "[SIGNAL] Dispositivo desconectado pelo servidor")
+                onRestartRequested()
+            }
+            "conflict" -> {
+                Log.w(AppConstants.TAG_MAIN, "[SIGNAL] Código em uso por outro aparelho")
+                onCodeTakenByOtherDevice()
+            }
+            else -> {
+                Log.w(AppConstants.TAG_MAIN, "[RECONNECT] Servidor indisponível no boot (status=${response?.status}); iniciando offline")
+                val cachedItems = try {
+                    offlineCache.getOfflinePlaylist()
+                } catch (e: Exception) {
+                    Log.e(AppConstants.TAG_MAIN, "Erro ao ler playlist offline: ${e.message}")
+                    emptyList()
+                }
+                if (cachedItems.isNotEmpty()) {
+                    Log.i(AppConstants.TAG_PLAYER, "Iniciando via cache offline (${cachedItems.size} itens)")
+                    playlistItems = cachedItems
+                    startPlayback(fromOffline = true)
+                } else {
+                    // Pareado, mas sem nada salvo: mantém a sessão e aguarda a rede
+                    showSync()
+                    tvSyncStatus.text = "Aguardando conexão…"
+                }
+                startReconnectLoop()
+            }
+        }
+    }
+
+    /**
+     * [RECONNECT] Tenta falar com o servidor com espera crescente
+     * (SERVER_RECONNECT_MIN_MS → SERVER_RECONNECT_MAX_MS). Ao conseguir,
+     * liga heartbeat/Realtime/polling sem interromper o que está tocando.
+     */
+    private fun startReconnectLoop() {
+        reconnectJob?.cancel()
+        reconnectJob = lifecycleScope.launch {
+            var waitMs = AppConstants.SERVER_RECONNECT_MIN_MS
+            while (isActive) {
+                delay(waitMs)
+                val sess = session.getSession() ?: return@launch
+                val response = supabase.connectDevice(sess.deviceCode, sess.fingerprint)
+                when (response?.status) {
+                    "connected", "ok" -> {
+                        Log.i(AppConstants.TAG_MAIN, "[RECONNECT] Servidor alcançado — retomando modo online")
+                        if (playlistItems.isEmpty()) {
+                            startPlayback()
+                        } else {
+                            startOnlineServices(sess)
+                            requestPlaylistRefresh("reconexão")
+                        }
+                        return@launch
+                    }
+                    "disconnected" -> { onRestartRequested(); return@launch }
+                    "conflict" -> { onCodeTakenByOtherDevice(); return@launch }
+                    else -> {
+                        Log.d(AppConstants.TAG_MAIN, "[RECONNECT] Ainda sem servidor; nova tentativa em ${waitMs / 1000}s")
+                        waitMs = (waitMs * 2).coerceAtMost(AppConstants.SERVER_RECONNECT_MAX_MS)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopReconnectLoop() {
+        reconnectJob?.cancel()
+        reconnectJob = null
+    }
+
+    /** Liga Realtime, heartbeat e polling — tudo que depende do servidor. */
+    private fun startOnlineServices(sess: SessionManager.Session) {
+        realtime.connect(sess.deviceId, sess.playlistId)
+        startHeartbeat(sess.deviceCode, sess.fingerprint)
+        startPolling(sess.deviceCode)
     }
 
     private fun checkOverlayPermission() {
@@ -351,6 +409,7 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         stopHeartbeat()
         stopPolling()
+        stopReconnectLoop()
         releaseWakeLock()
         heartbeat?.stop()
         realtime.disconnect()
@@ -573,9 +632,8 @@ class MainActivity : AppCompatActivity() {
             initExoPlayer()
 
             if (!fromOffline) {
-                realtime.connect(sess.deviceId, sess.playlistId)
-                startHeartbeat(sess.deviceCode, sess.fingerprint)
-                startPolling(sess.deviceCode)
+                stopReconnectLoop()
+                startOnlineServices(sess)
             }
 
             // [SYNC] Baixa TODOS os arquivos antes de liberar o player
@@ -607,7 +665,7 @@ class MainActivity : AppCompatActivity() {
                     delay(AppConstants.HEARTBEAT_INTERVAL_MS)
                 } catch (e: Exception) {
                     if (e is IllegalStateException && e.message == "TAKEOVER") {
-                        withContext(Dispatchers.Main) { onRestartRequested() }
+                        withContext(Dispatchers.Main) { onCodeTakenByOtherDevice() }
                         break
                     }
                     delay(5000)
@@ -930,15 +988,37 @@ class MainActivity : AppCompatActivity() {
      * Limpa a sessão e volta para a tela de pairing.
      */
     private fun onRestartRequested() {
+        resetToPairing(
+            message = "Dispositivo desvinculado ou reiniciado pelo dashboard",
+            clearMedia = true
+        )
+    }
+
+    /**
+     * [SIGNAL] Outro aparelho assumiu este código (conflito no boot ou HTTP 409
+     * no heartbeat). Volta ao pareamento, mas MANTÉM as mídias baixadas: se a
+     * pessoa digitar o mesmo código de novo, não precisa baixar tudo outra vez.
+     */
+    private fun onCodeTakenByOtherDevice() {
+        resetToPairing(
+            message = "Este código foi conectado em outro aparelho.\nDigite o código para reconectar esta TV.",
+            clearMedia = false
+        )
+    }
+
+    /** Para todos os serviços, limpa a sessão e mostra a tela de pareamento. */
+    private fun resetToPairing(message: String, clearMedia: Boolean) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            handler.post { onRestartRequested() }
+            handler.post { resetToPairing(message, clearMedia) }
             return
         }
 
-        Log.i(AppConstants.TAG_PLAYER, "[SIGNAL] Executando comando de Reset/Desconexão")
+        Log.i(AppConstants.TAG_PLAYER, "[SIGNAL] Voltando ao pareamento: $message (clearMedia=$clearMedia)")
         handler.removeCallbacksAndMessages(null)
+        if (isBound) startPingingService()   // o ping ao PlayerService foi removido acima
         stopHeartbeat()
         stopPolling()
+        stopReconnectLoop()
         refreshJob?.cancel()
         refreshJob = null
         refreshAgain = false
@@ -946,13 +1026,18 @@ class MainActivity : AppCompatActivity() {
         heartbeat?.stop()
         realtime.disconnect()
         releasePlayer()
-        cacheManager.clearAll()
+        imageView.visibility = View.GONE
+        playlistItems = emptyList()
+        playlistHash = 0
+        currentIndex = 0
+        if (clearMedia) cacheManager.clearAll()
         lifecycleScope.launch { offlineCache.clearCache() }
         session.clearSession()
 
         // [STATE] Volta para pairing
         showPairing()
-        Toast.makeText(this, "Dispositivo desvinculado ou reiniciado pelo dashboard", Toast.LENGTH_LONG).show()
+        tvPairingStatus.text = message
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     /**
