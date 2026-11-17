@@ -52,20 +52,20 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 ## Fase 2 — Prioridade alta (app)
 
-- [ ] **2.1 Recuperar conexão após início offline**
+- [~] **2.1 Recuperar conexão após início offline** — implementado (`f92934e`), falta teste no aparelho
   - Problema: iniciando pelo cache offline, heartbeat/Realtime/polling nunca iniciam; o dispositivo fica offline no dashboard para sempre.
   - Arquivos: `MainActivity.kt` (`onCreate`, `startPlayback`), `NetworkStateManager.kt`.
   - Solução: ao tocar do cache, observar a rede (`networkState`) e tentar `connectDevice` periodicamente; ao conseguir, iniciar heartbeat, Realtime e polling.
   - Teste: ligar a TV Box sem rede → toca do cache; ligar a rede → aparece online no dashboard em até 1 min.
-  - [!] Decisão: no boot, se o servidor responder **conflict** (outro aparelho assumiu o código), o app deve tocar offline ou voltar ao pareamento?
+  - Decisão: **conflict** no boot (ou 409 no heartbeat) → volta ao pareamento com mensagem, mantendo as mídias baixadas.
 
-- [ ] **2.2 Eliminar tela preta entre vídeos**
+- [~] **2.2 Eliminar tela preta entre vídeos** — implementado (`9b212b8`), falta teste no aparelho
   - Problema: cada vídeo é carregado só quando o anterior termina; aparece fundo preto.
   - Arquivo: `MainActivity.kt` (`playVideo`, `initExoPlayer`).
   - Solução: `playerView.setKeepContentOnPlayerReset(true)` e enfileirar o próximo vídeo no ExoPlayer quando o próximo item também for vídeo.
   - Teste: playlist com 3 vídeos seguidos → nenhum frame preto visível.
 
-- [ ] **2.3 Corrigir Direct Boot**
+- [~] **2.3 Corrigir Direct Boot** — implementado (`5d6c345`), falta teste no aparelho
   - Problema: `directBootAware` faz o app abrir antes do desbloqueio, quando SharedPreferences/Room/arquivos ainda não estão acessíveis → crash em aparelhos com criptografia por arquivo.
   - Arquivos: `AndroidManifest.xml`, `BootReceiver.kt`.
   - Solução: remover `directBootAware` e ignorar `LOCKED_BOOT_COMPLETED` (usar só `BOOT_COMPLETED`).
@@ -115,7 +115,7 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 
 | ID | Pergunta | Resposta |
 |---|---|---|
-| 2.1 | Conflito no boot: tocar offline ou voltar ao pareamento? | |
+| 2.1 | Conflito no boot: tocar offline ou voltar ao pareamento? | Voltar ao pareamento (17/11/2026) |
 | 4.3 | Teto de espaço e prazo para apagar mídia antiga? | |
 | 4.7 | Orientação física das TVs verticais? | |
 | — | O app será publicado na Play Store? (muda regras de FullScreenIntent / permissões) | |
@@ -131,3 +131,6 @@ Código alterado em 17/11/2026; compila, **falta teste real**.
 | 17/11/2026 | 0.1–0.3 | Limpeza, Gradle Wrapper 8.13, git iniciado com primeiro commit (já inclui 1.1/1.2) | concluído |
 | 17/11/2026 | 0.4 | Projeto movido para `~/Projetos/impulsotv`; git e build validados | concluído |
 | 17/11/2026 | 0.5 | Remoto `Jefilho-Git/app.impulsotv` configurado e `main` publicada — **Fase 0 concluída** | concluído |
+| 17/11/2026 | 2.1 | Reconexão em segundo plano após início offline; conflito → pareamento | aguardando teste em campo |
+| 17/11/2026 | 2.2 | Camadas vídeo/imagem + keepContentOnPlayerReset: sem tela preta | aguardando teste em campo |
+| 17/11/2026 | 2.3 | Direct Boot removido (manifest + BootReceiver) | aguardando teste em campo |
