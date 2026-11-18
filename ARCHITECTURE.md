@@ -295,3 +295,18 @@ Roteiro de migração das TVs e comandos de manutenção: [PLANO_EXECUCAO.md](PL
 - **Rede das TVs:** o adb da PROSB3000 aceita conexões sem autenticação na porta 5555. Pedido à TI em `docs/pedido-ti-rede-tvs.md`.
 - `player_status` do heartbeat é sempre `"playing"` (4.5), até confirmar os valores aceitos pela `device-heartbeat`.
 - Religamento do Wi‑Fi (`WifiGuard`) instalado, mas ainda não observado numa queda real causada pelo hotspot.
+
+## Coleta de mídia (3.4.0)
+
+`manager/MediaTelemetry.kt` registra cada download do `MediaCacheManager`
+(Content-Length declarado e status HTTP; nunca URL, nome de arquivo ou código)
+numa fila em memória de até 200 eventos. O heartbeat envia lotes de até 50 para
+a Edge Function `media-telemetry` com `x-device-token`, a cada 30 s.
+
+- Confirmado (2xx) ou recusado (4xx): sai da fila.
+- 503 (coleta desligada no servidor): pausa os envios por 1 hora.
+- Sem resposta, 429 ou 5xx: tenta de novo com o mesmo `request_id` (sem duplicar).
+- Sem token (modo antigo): não envia.
+- Mídia tocada direto da rede (disco cheio) e cache local não são registrados.
+
+Para desligar sem novo APK: `MEDIA_TELEMETRY_V2_ENABLED=false` nos segredos do Supabase.

@@ -69,6 +69,8 @@ class SupabaseClient {
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
+    private val telemetryGson: Gson = GsonBuilder().serializeNulls().create()
+
     // ─── Headers padrão Supabase ──────────────────────────────────────────
 
     private fun Request.Builder.supabaseHeaders(): Request.Builder = this
@@ -194,4 +196,33 @@ class SupabaseClient {
             }
         }
 
+
+    /**
+     * Envia um lote da coleta de mídia (Edge Function media-telemetry).
+     * Só com o token da TV; no modo antigo não envia nada.
+     * @return código HTTP, ou -1 se não houve resposta. Nunca lança exceção.
+     */
+    suspend fun sendMediaTelemetry(
+        deviceCode: String,
+        events: List<com.impulsolab.impulsotv.manager.MediaTelemetry.Event>
+    ): Int = withContext(Dispatchers.IO) {
+        if (deviceToken == null || events.isEmpty()) return@withContext 0
+        try {
+            val payload = mapOf(
+                "device_code" to deviceCode.uppercase(),
+                "events" to events.map { it.toPayload() }
+            )
+            // serializeNulls: o servidor exige response_bytes/status null explícitos.
+            val body = telemetryGson.toJson(payload).toRequestBody(JSON)
+            val request = Request.Builder().url("${AppConstants.FUNCTIONS_URL}/media-telemetry")
+                .supabaseHeaders().post(body).build()
+            http.newCall(request).execute().use { response ->
+                Log.d(AppConstants.TAG_SUPABASE, "[FUNCTION] media-telemetry status=${response.code} eventos=${events.size}")
+                response.code
+            }
+        } catch (e: Exception) {
+            Log.w(AppConstants.TAG_SUPABASE, "[FUNCTION] media-telemetry sem resposta: ${e.message}")
+            -1
+        }
+    }
 }

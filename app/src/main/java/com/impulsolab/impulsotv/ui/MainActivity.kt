@@ -56,6 +56,7 @@ import com.impulsolab.impulsotv.data.model.PlaylistResult
 import com.impulsolab.impulsotv.data.remote.RealtimeClient
 import com.impulsolab.impulsotv.data.remote.SupabaseClient
 import com.impulsolab.impulsotv.manager.MediaCacheManager
+import com.impulsolab.impulsotv.manager.MediaTelemetry
 import com.impulsolab.impulsotv.manager.NetworkStateManager
 import com.impulsolab.impulsotv.manager.SessionManager
 import com.impulsolab.impulsotv.service.PlayerService
@@ -827,6 +828,7 @@ class MainActivity : AppCompatActivity() {
                         orientation = orientation,
                         isOnline = networkManager.isOnline()
                     )
+                    flushMediaTelemetry(deviceCode)
                     delay(AppConstants.HEARTBEAT_INTERVAL_MS)
                 } catch (e: Exception) {
                     if (e is IllegalStateException && e.message == "TAKEOVER") {
@@ -836,6 +838,18 @@ class MainActivity : AppCompatActivity() {
                     delay(5000)
                 }
             }
+        }
+    }
+
+    /** Envia a coleta de mídia pendente. Isolado: nunca interrompe o heartbeat. */
+    private suspend fun flushMediaTelemetry(deviceCode: String) {
+        try {
+            val batch = MediaTelemetry.peekBatch()
+            if (batch.isEmpty()) return
+            MediaTelemetry.onBatchResult(batch, supabase.sendMediaTelemetry(deviceCode, batch))
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(AppConstants.TAG_HEARTBEAT, "[TELEMETRY] envio ignorado: ${e.message}")
         }
     }
 

@@ -184,6 +184,7 @@ class MediaCacheManager(context: Context) {
 
     private fun downloadFile(url: String, dest: File): Boolean {
         val tempFile = File(dest.absolutePath + ".tmp")
+        var recorded = false   // um evento de coleta por download, mesmo se falhar no meio
         return try {
             val finalUrl = resolveUrl(url)
             val request = Request.Builder().url(finalUrl)
@@ -191,6 +192,8 @@ class MediaCacheManager(context: Context) {
                 .build()
 
             http.newCall(request).execute().use { response ->
+                MediaTelemetry.recordDownload(response.body?.contentLength() ?: -1L, response.code)
+                recorded = true
                 if (!response.isSuccessful) {
                     Log.e(AppConstants.TAG_CACHE, "Download falhou ${response.code}: $finalUrl")
                     return false
@@ -223,6 +226,7 @@ class MediaCacheManager(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(AppConstants.TAG_CACHE, "Erro ao baixar $url: ${e.message}")
+            if (!recorded) MediaTelemetry.recordDownload(-1L, null)   // sem resposta do servidor
             tempFile.delete()
             false
         } finally {
