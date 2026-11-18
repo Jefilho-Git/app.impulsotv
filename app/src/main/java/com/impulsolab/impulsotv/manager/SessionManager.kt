@@ -31,7 +31,11 @@ class SessionManager(private val context: Context) {
         val deviceCode: String,
         val deviceName: String,
         val playlistId: String,
-        val fingerprint: String
+        val fingerprint: String,
+        /** Token da TV (Fase 2). Null em sessões salvas por versões antigas. */
+        val deviceToken: String? = null,
+        /** Canal Realtime secreto desta TV. */
+        val signalTopic: String? = null
     )
 
     /** Retorna a sessão salva, ou null se não pareado */
@@ -41,7 +45,11 @@ class SessionManager(private val context: Context) {
         val deviceName = prefs.getString(AppConstants.PREF_DEVICE_NAME, null) ?: return null
         val playlistId = prefs.getString(AppConstants.PREF_PLAYLIST_ID, null) ?: return null
         val fingerprint = prefs.getString(AppConstants.PREF_FINGERPRINT, null) ?: getOrCreateFingerprint()
-        return Session(deviceId, deviceCode, deviceName, playlistId, fingerprint)
+        return Session(
+            deviceId, deviceCode, deviceName, playlistId, fingerprint,
+            deviceToken = prefs.getString(AppConstants.PREF_DEVICE_TOKEN, null),
+            signalTopic = prefs.getString(AppConstants.PREF_SIGNAL_TOPIC, null)
+        )
     }
 
     /** Salva os dados do pairing após sucesso */
@@ -60,6 +68,20 @@ class SessionManager(private val context: Context) {
             .putString(AppConstants.PREF_FINGERPRINT,  fingerprint)
             .apply()
         Log.i("SessionManager", "Sessão salva: $deviceName ($deviceId)")
+    }
+
+    /**
+     * Guarda as credenciais entregues pela device-connect. Elas mudam a cada
+     * conexão (o servidor revoga as anteriores), então sempre sobrescreve.
+     */
+    fun saveCredentials(deviceToken: String, signalTopic: String?) {
+        prefs.edit()
+            .putString(AppConstants.PREF_DEVICE_TOKEN, deviceToken)
+            .apply {
+                if (signalTopic.isNullOrBlank()) remove(AppConstants.PREF_SIGNAL_TOPIC)
+                else putString(AppConstants.PREF_SIGNAL_TOPIC, signalTopic)
+            }
+            .apply()
     }
 
     /** Atualiza a playlist vinculada (trocada no dashboard sem novo pareamento) */

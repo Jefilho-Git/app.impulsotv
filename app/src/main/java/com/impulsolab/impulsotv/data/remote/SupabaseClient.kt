@@ -29,9 +29,16 @@ import java.util.concurrent.TimeUnit
  *   device-api       → playlist do dispositivo (ou "disconnected")
  * Todas as chamadas são suspending functions — rodam em Dispatchers.IO.
  * Autenticação: apikey + Authorization Bearer com a chave publishable.
+ * Depois do pareamento, a TV também envia x-device-token (Fase 2).
  * ════════════════════════════════════════════════════════════════
  */
 class SupabaseClient {
+
+    /** Token desta TV, entregue pela device-connect. Null antes do pareamento. */
+    @Volatile var deviceToken: String? = null
+
+    /** Fingerprint (UUID do app); usado no modo antigo, sem token. */
+    @Volatile var fingerprint: String? = null
 
     // ─── HTTP client ──────────────────────────────────────────────────────
 
@@ -69,6 +76,7 @@ class SupabaseClient {
         .addHeader("Authorization", "Bearer ${AppConstants.SUPABASE_ANON_KEY}")
         .addHeader("Content-Type",  "application/json")
         .addHeader("Prefer",        "return=representation")
+        .apply { deviceToken?.let { addHeader("x-device-token", it) } }
 
     // ════════════════════════════════════════════════════════════════════
     // EDGE FUNCTIONS
@@ -132,6 +140,14 @@ class SupabaseClient {
                 if (response.code == 409) {
                     throw IllegalStateException("TAKEOVER")
                 }
+                // 200 {"status":"disconnected"}: painel desconectou, outro
+                // aparelho assumiu ou o token foi revogado.
+                val status = try {
+                    gson.fromJson(response.body?.string() ?: "", Map::class.java)?.get("status") as? String
+                } catch (_: Exception) { null }
+                if (status == "disconnected") {
+                    throw IllegalStateException("TAKEOVER")
+                }
                 response.isSuccessful
             }
         } catch (e: Exception) {
@@ -146,7 +162,8 @@ class SupabaseClient {
      */
     suspend fun fetchPlaylistFunction(deviceCode: String): PlaylistResult =
         withContext(Dispatchers.IO) {
-            val url = "${AppConstants.FUNCTIONS_URL}/device-api?device_code=${deviceCode.uppercase()}"
+            val fp = fingerprint?.let { "&fingerprint=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+            val url = "${AppConstants.FUNCTIONS_URL}/device-api?device_code=${deviceCode.uppercase()}$fp"
             val request = Request.Builder().url(url).supabaseHeaders().get().build()
 
             try {

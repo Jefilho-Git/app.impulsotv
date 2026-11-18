@@ -87,6 +87,13 @@ object AppConstants {
     const val PREF_PLAYLIST_ID   = "playlist_id"
     const val PREF_FINGERPRINT   = "fingerprint"
     const val PREF_LAST_RESTART  = "last_restart_at"
+    // Fase 2: credenciais entregues pela device-connect a cada conexão
+    const val PREF_DEVICE_TOKEN  = "device_token"
+    const val PREF_SIGNAL_TOPIC  = "signal_topic"
+
+    /** Troca de aparelho: tenta de novo a cada 5s, por até 15 min. */
+    const val TAKEOVER_APPROVAL_RETRY_MS   = 5_000L
+    const val TAKEOVER_APPROVAL_TIMEOUT_MS = 15 * 60_000L
 
     // Preferências do aparelho — NÃO são apagadas no reset de pareamento
     const val PREF_DEVICE_FILE     = "impulsotv_device"

@@ -142,9 +142,14 @@ data class PlaylistItem(
  * Respostas das Edge Functions do Supabase
  */
 data class ConnectResponse(
-    @SerializedName("status")       val status: String, // "connected" | "conflict" | "ok"
+    @SerializedName("status")       val status: String, // "ok" | "conflict" | "pending_approval" | "error"
     @SerializedName("device")       val device: Device?,
-    @SerializedName("current")      val conflictInfo: ConflictInfo?
+    @SerializedName("current")      val conflictInfo: ConflictInfo?,
+    /** Segredo desta TV (Fase 2) — vai no header x-device-token. */
+    @SerializedName("device_token") val deviceToken: String? = null,
+    /** Canal Realtime (broadcast) exclusivo desta TV. */
+    @SerializedName("signal_topic") val signalTopic: String? = null,
+    @SerializedName("message")      val message: String? = null
 )
 
 data class ConflictInfo(

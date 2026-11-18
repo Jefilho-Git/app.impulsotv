@@ -74,10 +74,19 @@ dispositivo. Mudanças feitas no painel chegam em segundos pelo Realtime.
 Painel cria dispositivo → mostra código (ex.: UBPTXF) → pessoa digita na TV
         │
 POST device-connect { device_code, fingerprint (UUID do app), connection_type: "android", force }
-        ├─ "connected"/"ok"  → salva sessão → startPlayback()
-        ├─ "conflict"        → diálogo "Dispositivo em uso" → [Sim] repete com force=true
-        └─ outro / sem rede  → mensagem de erro na tela de pareamento
+        ├─ "connected"/"ok"     → salva sessão + device_token + signal_topic → startPlayback()
+        ├─ "conflict"           → diálogo "Dispositivo em uso" → [Sim] repete com force=true
+        ├─ "pending_approval"   → o dono aprova em Dispositivos no painel; o app repete
+        │                         com force=true a cada 5s, por até 15 min
+        └─ outro / sem rede     → mensagem de erro na tela de pareamento
 ```
+
+**Credenciais (Fase 2, servidor desde 18/11/2026).** Toda conexão bem-sucedida devolve um
+`device_token` novo e um `signal_topic` novo; os anteriores deixam de valer. O app guarda os
+dois em `SessionManager` e envia o token no header `x-device-token` para `device-api` e
+`device-heartbeat`. Desconectar pelo painel apaga o token no banco. TVs sem token continuam
+aceitas pelo modo antigo (código + fingerprint) até o servidor desligá-lo
+(`DEVICE_LEGACY_AUTH=off`).
 
 **Ao abrir o app com sessão salva** (`resumeSession`):
 
@@ -88,7 +97,7 @@ POST device-connect { device_code, fingerprint (UUID do app), connection_type: "
 | `conflict` | Outro aparelho assumiu o código → pareamento **mantendo as mídias** |
 | sem resposta | Toca a playlist offline (Room) e tenta reconectar em segundo plano: 10s → 60s, ou 2s depois que a rede volta. Sem playlist salva: "Aguardando conexão…" |
 
-O heartbeat responder **409** tem o mesmo tratamento de `conflict`.
+O heartbeat responder **409** ou `{"status":"disconnected"}` tem o mesmo tratamento de `conflict`.
 
 ---
 
@@ -134,15 +143,21 @@ disparam rotação. Se a imagem ficar de cabeça para baixo na TV, troque o âng
 
 ## 5. Atualizações em tempo real
 
-Canal único `realtime:impulsotv-{device_id}`, protocolo Phoenix **v1** (mensagens como objetos
-JSON), autenticado pelo `apikey` da URL (sem `access_token`).
+Canal secreto `realtime:{signal_topic}` (entregue pela `device-connect`), protocolo Phoenix
+**v1**, autenticado pelo `apikey` da URL. Desde 18/11/2026 a chave pública **não lê** as
+tabelas, então o app não usa mais `postgres_changes`: triggers no banco enviam **broadcasts**
+nesse canal (`device_send_signal`).
 
-| Evento | Ação |
+| Broadcast | Ação |
 |---|---|
-| `UPDATE devices` com `restart_requested_at` diferente do último visto | Reset → pareamento |
-| `UPDATE devices` com `is_connected = false` | Reset → pareamento |
-| `UPDATE devices` com `playlist_id` diferente | Busca a playlist nova e reassina o canal |
-| `* playlist_items` da playlist atual | Busca a playlist nova |
+| `device` com `revoked = true` e `is_connected = true` | Outro aparelho assumiu → pareamento mantendo as mídias |
+| `device` com `is_connected = false` | Reset → pareamento |
+| `device` com `restart_requested_at` diferente do último visto | Reset → pareamento |
+| `device` com `playlist_id` diferente | Busca a playlist nova |
+| `playlist` | Itens da playlist mudaram → busca a playlist nova |
+
+Sessões sem `signal_topic` (salvas antes da 3.3.0) ainda tentam o canal antigo
+`realtime:impulsotv-{device_id}`, que não recebe nada; a próxima conexão já entrega o tópico.
 
 **Busca da playlist nova** (`requestPlaylistRefresh`): pela `device-api`, em segundo plano. Os
 arquivos são baixados **antes** da troca, que acontece ao fim do item em exibição. Se a busca
@@ -151,10 +166,8 @@ usa o mesmo caminho, como reserva do Realtime.
 
 O primeiro `restart_requested_at` visto após o pareamento vira só referência (sem reset).
 
-**Requisito no Supabase:**
-```sql
-alter publication supabase_realtime add table public.devices, public.playlist_items;
-```
+**Requisito no Supabase:** migration `20261118120000_device_pairing_tokens.sql` (triggers de
+sinal) e Realtime com canais públicos permitidos.
 
 ---
 
@@ -277,7 +290,7 @@ Roteiro de migração das TVs e comandos de manutenção: [PLANO_EXECUCAO.md](PL
 
 ## 10. Pendências conhecidas
 
-- **Segurança do Supabase:** desde 17/11 a chave pública **só lê** (`supabase/seguranca_rls.sql`). Ainda lê os códigos de pareamento — a etapa 2 (opcional) esconde.
+- **Segurança do Supabase:** desde 18/11 a chave pública **não lê nem escreve** nas tabelas (Fase 1 do repositório web). O app fala só com as Edge Functions e com o canal de sinal.
 - **Relógio das TVs:** `last_checkin` usa o relógio da TV; algumas aparecem horas atrasadas.
 - **Rede das TVs:** o adb da PROSB3000 aceita conexões sem autenticação na porta 5555. Pedido à TI em `docs/pedido-ti-rede-tvs.md`.
 - `player_status` do heartbeat é sempre `"playing"` (4.5), até confirmar os valores aceitos pela `device-heartbeat`.

@@ -37,12 +37,22 @@ import java.util.concurrent.atomic.AtomicInteger
  *   payload = {"ids":[...], "data":{"table":..., "type":"UPDATE",
  *              "record":{...}, "old_record":{...}, ...}}
  *
+ * Fase 2 (servidor ≥ 18/11/2026): a chave pública não lê mais as tabelas,
+ * então postgres_changes não chega. Com o signal_topic entregue pela
+ * device-connect, o app assina o canal secreto "realtime:<signal_topic>"
+ * e recebe broadcasts enviados por triggers do banco:
+ *   event "device"   → {is_connected, restart_requested_at, playlist_id, revoked}
+ *   event "playlist" → itens da playlist mudaram
+ * Sem signal_topic (sessão antiga), cai no join antigo por postgres_changes.
+ *
  * [REALTIME-PROTOCOL] — busque este tag para rastrear toda a lógica
  * ════════════════════════════════════════════════════════════════
  */
 class RealtimeClient(
     private val onPlaylistChanged: () -> Unit,
     private val onRestartRequested: () -> Unit,
+    /** Outro aparelho assumiu este dispositivo (canal da TV foi trocado). */
+    private val onTakenOver: () -> Unit = onRestartRequested,
     /** Último restart_requested_at já processado (persistido entre reinícios do app). */
     private val loadLastRestartAt: () -> String? = { null },
     private val saveLastRestartAt: (String) -> Unit = {}
@@ -53,6 +63,7 @@ class RealtimeClient(
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var deviceId: String = ""
     @Volatile private var playlistId: String = ""
+    @Volatile private var signalTopic: String? = null
     @Volatile private var isConnected = false
     @Volatile private var shouldReconnect = true
 
@@ -84,10 +95,11 @@ class RealtimeClient(
      * @param deviceId   UUID do dispositivo (tabela devices)
      * @param playlistId UUID da playlist vinculada
      */
-    fun connect(deviceId: String, playlistId: String) {
+    fun connect(deviceId: String, playlistId: String, signalTopic: String? = null) {
         closeSocket("Reconectando")
         this.deviceId = deviceId
         this.playlistId = playlistId
+        this.signalTopic = signalTopic?.takeIf { it.isNotBlank() }
         shouldReconnect = true
         openWebSocket()
     }
@@ -175,6 +187,8 @@ class RealtimeClient(
      * não é um JWT e seria rejeitada como token.
      */
     private fun joinChannels() {
+        signalTopic?.let { joinSignalChannel(it); return }
+
         val topic = "realtime:impulsotv-$deviceId"   // nome único por dispositivo
 
         val changes = JsonArray().apply {
@@ -209,6 +223,23 @@ class RealtimeClient(
         Log.d(AppConstants.TAG_REALTIME, "[REALTIME-PROTOCOL] Join enviado: $topic")
     }
 
+    /** [REALTIME-PROTOCOL] Canal secreto da TV: só broadcast, sem tabelas. */
+    private fun joinSignalChannel(signalTopic: String) {
+        val topic = "realtime:$signalTopic"
+        val config = JsonObject().apply {
+            add("broadcast", JsonObject().apply {
+                addProperty("self", false)
+                addProperty("ack", false)
+            })
+            add("presence", JsonObject().apply { addProperty("key", "") })
+            add("postgres_changes", JsonArray())
+            addProperty("private", false)
+        }
+        val payload = JsonObject().apply { add("config", config) }
+        send(phoenixMessage(topic = topic, event = "phx_join", payload = payload, joinRef = nextRef()))
+        Log.d(AppConstants.TAG_REALTIME, "[REALTIME-PROTOCOL] Join (sinal) enviado")
+    }
+
     // ─── Message Handling ─────────────────────────────────────────────────
 
     /**
@@ -237,6 +268,26 @@ class RealtimeClient(
                 }
 
                 "system" -> Log.i(AppConstants.TAG_REALTIME, "[REALTIME-PROTOCOL] system: $payload")
+
+                "broadcast" -> {
+                    // payload = {"type":"broadcast","event":"device|playlist","payload":{...}}
+                    val signal = payload.get("event")?.takeIf { !it.isJsonNull }?.asString ?: return
+                    val data = payload.get("payload")?.takeIf { it.isJsonObject }?.asJsonObject
+                    Log.d(AppConstants.TAG_REALTIME, "[REALTIME-PROTOCOL] Sinal recebido: $signal")
+                    when (signal) {
+                        "playlist" -> handlePlaylistChange("broadcast")
+                        "device" -> {
+                            val revoked = data?.get("revoked")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
+                            val stillConnected = data?.get("is_connected")?.takeIf { !it.isJsonNull }?.asBoolean ?: true
+                            if (revoked && stillConnected) {
+                                Log.i(AppConstants.TAG_REALTIME, "[SIGNAL] Outro aparelho assumiu este dispositivo")
+                                handler.post { onTakenOver() }
+                            } else {
+                                handleDeviceUpdate(data, "UPDATE")
+                            }
+                        }
+                    }
+                }
 
                 "postgres_changes" -> {
                     // Formato do servidor: payload.data.{table,type,record}

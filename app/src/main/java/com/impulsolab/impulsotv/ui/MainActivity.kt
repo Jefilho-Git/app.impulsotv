@@ -106,6 +106,8 @@ class MainActivity : AppCompatActivity() {
     private var heartbeatJob: Job? = null
     private var pollingJob: Job? = null
     private var reconnectJob: Job? = null
+    private var approvalJob: Job? = null
+    private var approvalStartedAt: Long = 0L
 
 
     // ─── ExoPlayer ───────────────────────────────────────────────────────
@@ -224,6 +226,7 @@ class MainActivity : AppCompatActivity() {
 
         session        = SessionManager(this)
         supabase       = SupabaseClient()
+        session.getSession()?.let { applyCredentials(it) }
         cacheManager   = MediaCacheManager(this)
         networkManager = NetworkStateManager(this) {
             // Rede voltou: se estamos esperando o servidor, tenta já (2s)
@@ -242,6 +245,7 @@ class MainActivity : AppCompatActivity() {
         realtime = RealtimeClient(
             onPlaylistChanged = { onPlaylistChangedFromRealtime() },   // [REALTIME]
             onRestartRequested = { onRestartRequested() },             // [REALTIME]
+            onTakenOver = { onCodeTakenByOtherDevice() },              // [SIGNAL]
             loadLastRestartAt = { session.getLastRestartAt() },
             saveLastRestartAt = { session.saveLastRestartAt(it) }
         )
@@ -271,7 +275,10 @@ class MainActivity : AppCompatActivity() {
     private suspend fun resumeSession(sess: SessionManager.Session) {
         val response = supabase.connectDevice(sess.deviceCode, sess.fingerprint)
         when (response?.status) {
-            "connected", "ok" -> startPlayback()
+            "connected", "ok" -> {
+                rememberCredentials(response)
+                startPlayback()
+            }
             "disconnected" -> {
                 Log.w(AppConstants.TAG_MAIN, "[SIGNAL] Dispositivo desconectado pelo servidor")
                 onRestartRequested()
@@ -320,10 +327,11 @@ class MainActivity : AppCompatActivity() {
                 when (response?.status) {
                     "connected", "ok" -> {
                         Log.i(AppConstants.TAG_MAIN, "[RECONNECT] Servidor alcançado — retomando modo online")
+                        rememberCredentials(response)
                         if (playlistItems.isEmpty()) {
                             startPlayback()
                         } else {
-                            startOnlineServices(sess)
+                            startOnlineServices(session.getSession() ?: sess)
                             requestPlaylistRefresh("reconexão")
                         }
                         return@launch
@@ -346,8 +354,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Liga Realtime, heartbeat e polling — tudo que depende do servidor. */
+    /** [SIGNAL] Fase 2: guarda token/canal novos (o servidor troca a cada conexão). */
+    private fun rememberCredentials(response: com.impulsolab.impulsotv.data.model.ConnectResponse?) {
+        val token = response?.deviceToken
+        if (token.isNullOrBlank()) {
+            Log.w(AppConstants.TAG_MAIN, "[SIGNAL] Servidor não entregou token (modo antigo)")
+            return
+        }
+        session.saveCredentials(token, response?.signalTopic)
+        supabase.deviceToken = token
+    }
+
+    private fun applyCredentials(sess: SessionManager.Session) {
+        supabase.deviceToken = sess.deviceToken
+        supabase.fingerprint = sess.fingerprint
+    }
+
     private fun startOnlineServices(sess: SessionManager.Session) {
-        realtime.connect(sess.deviceId, sess.playlistId)
+        applyCredentials(sess)
+        realtime.connect(sess.deviceId, sess.playlistId, sess.signalTopic)
         startHeartbeat(sess.deviceCode, sess.fingerprint)
         startPolling(sess.deviceCode)
     }
@@ -549,8 +574,11 @@ class MainActivity : AppCompatActivity() {
         setPairingLoading(true)
         tvPairingStatus.text = ""
 
+        if (!force) stopApprovalWait()
+
         lifecycleScope.launch {
             val fingerprint = session.getOrCreateFingerprint()
+            supabase.fingerprint = fingerprint
             val response = supabase.connectDevice(code, fingerprint, force)
 
             if (response == null) {
@@ -559,7 +587,13 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
+            if (response.status != "pending_approval") stopApprovalWait()
+
             when (response.status) {
+                "pending_approval" -> {
+                    setPairingLoading(false)
+                    waitForTakeoverApproval(code)
+                }
                 "conflict" -> {
                     setPairingLoading(false)
                     handleConnectionConflict(
@@ -584,6 +618,7 @@ class MainActivity : AppCompatActivity() {
                         deviceName = device.name,
                         playlistId = device.playlistId ?: ""
                     )
+                    rememberCredentials(response)
 
                     Log.i(AppConstants.TAG_PAIRING, "[PAIRING-UI] Pareado com sucesso: ${device.name}")
 
@@ -598,6 +633,36 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * [PAIRING-UI] Troca de aparelho pedida: o dono aprova em Dispositivos
+     * no painel. Repete o pedido a cada 5s, por até 15 min, enquanto o código
+     * digitado continuar o mesmo.
+     */
+    private fun waitForTakeoverApproval(code: String) {
+        if (approvalStartedAt == 0L) approvalStartedAt = System.currentTimeMillis()
+        if (System.currentTimeMillis() - approvalStartedAt > AppConstants.TAKEOVER_APPROVAL_TIMEOUT_MS) {
+            stopApprovalWait()
+            tvPairingStatus.text = "O pedido de troca expirou. Digite o código para tentar de novo."
+            return
+        }
+        tvPairingStatus.text = "Aguardando o dono aprovar a troca no painel (Dispositivos)…"
+        approvalJob?.cancel()
+        approvalJob = lifecycleScope.launch {
+            delay(AppConstants.TAKEOVER_APPROVAL_RETRY_MS)
+            if (etCode.text.toString().trim().uppercase() == code) {
+                attemptPairing(force = true)
+            } else {
+                stopApprovalWait()
+            }
+        }
+    }
+
+    private fun stopApprovalWait() {
+        approvalJob?.cancel()
+        approvalJob = null
+        approvalStartedAt = 0L
     }
 
     private fun handleConnectionConflict(conflict: com.impulsolab.impulsotv.data.model.ConflictInfo, code: String) {
@@ -1248,7 +1313,7 @@ class MainActivity : AppCompatActivity() {
         if (serverPlaylistId.isNullOrBlank() || serverPlaylistId == sess.playlistId) return
         Log.i(AppConstants.TAG_PLAYER, "[PLAYLIST-UPDATE] playlist_id mudou: ${sess.playlistId} → $serverPlaylistId")
         session.updatePlaylistId(serverPlaylistId)
-        if (reconnectRealtime) realtime.connect(sess.deviceId, serverPlaylistId)
+        if (reconnectRealtime) realtime.connect(sess.deviceId, serverPlaylistId, sess.signalTopic)
     }
 
     /** Assinatura da playlist: muda se qualquer item, ordem, arquivo, duração ou modo mudar */
