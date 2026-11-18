@@ -246,6 +246,7 @@ class MainActivity : AppCompatActivity() {
             onPlaylistChanged = { onPlaylistChangedFromRealtime() },   // [REALTIME]
             onRestartRequested = { onRestartRequested() },             // [REALTIME]
             onTakenOver = { onCodeTakenByOtherDevice() },              // [SIGNAL]
+            onRemoteRestart = { onRemoteRestartRequested() },          // [RESTART]
             loadLastRestartAt = { session.getLastRestartAt() },
             saveLastRestartAt = { session.saveLastRestartAt(it) }
         )
@@ -1182,12 +1183,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * [REALTIME] Dashboard solicitou reset do dispositivo.
-     * Limpa a sessão e volta para a tela de pairing.
+     * [RESTART] "Reiniciar a TV" no painel. NÃO despareia: procura uma versão
+     * nova na hora (ignorando a janela de horário) e, se houver, instala —
+     * o BootReceiver reabre o app depois. Sem versão nova, reabre o app,
+     * mantendo sessão e mídias.
+     */
+    private var remoteRestartInProgress = false
+
+    private fun onRemoteRestartRequested() {
+        if (remoteRestartInProgress) return
+        remoteRestartInProgress = true
+        Log.i(AppConstants.TAG_MAIN, "[RESTART] Reinício pedido pelo painel")
+        Toast.makeText(this, "Reiniciando a pedido do painel…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val installing = try {
+                com.impulsolab.impulsotv.update.UpdateManager.get(this@MainActivity).checkAndInstallNow()
+            } catch (e: Exception) {
+                Log.w(AppConstants.TAG_MAIN, "[RESTART] Verificação de atualização falhou: ${e.message}")
+                false
+            }
+            if (installing) {
+                Log.i(AppConstants.TAG_MAIN, "[RESTART] Atualização em instalação — o app reabre sozinho")
+                remoteRestartInProgress = false
+                return@launch
+            }
+            restartApp()
+        }
+    }
+
+    /** Reabre o app num processo novo (mesma sessão, mesmas mídias). */
+    private fun restartApp() {
+        val launch = packageManager.getLaunchIntentForPackage(packageName)?.component
+            ?: ComponentName(this, MainActivity::class.java)
+        Log.i(AppConstants.TAG_MAIN, "[RESTART] Reabrindo o app")
+        startActivity(Intent.makeRestartActivityTask(launch))
+        Runtime.getRuntime().exit(0)
+    }
+
+    /**
+     * [REALTIME] Dashboard desconectou o dispositivo (ou o servidor mandou
+     * "disconnected"). Limpa a sessão e volta para a tela de pairing.
      */
     private fun onRestartRequested() {
         resetToPairing(
-            message = "Dispositivo desvinculado ou reiniciado pelo dashboard",
+            message = "Dispositivo desconectado pelo painel",
             clearMedia = true
         )
     }

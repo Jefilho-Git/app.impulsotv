@@ -53,6 +53,8 @@ class RealtimeClient(
     private val onRestartRequested: () -> Unit,
     /** Outro aparelho assumiu este dispositivo (canal da TV foi trocado). */
     private val onTakenOver: () -> Unit = onRestartRequested,
+    /** "Reiniciar a TV" no painel: reabre o app sem desparear. */
+    private val onRemoteRestart: () -> Unit = onRestartRequested,
     /** Último restart_requested_at já processado (persistido entre reinícios do app). */
     private val loadLastRestartAt: () -> String? = { null },
     private val saveLastRestartAt: (String) -> Unit = {}
@@ -352,10 +354,14 @@ class RealtimeClient(
 
         Log.d(AppConstants.TAG_REALTIME, "[SIGNAL] Device Update: isConnected=$isDeviceConnected restartAt=$restartAt")
 
-        if (restartRequested || !isDeviceConnected) {
-            val reason = if (!isDeviceConnected) "Desconexão (is_connected=false)" else "Restart (requested_at)"
-            Log.i(AppConstants.TAG_REALTIME, "[SIGNAL] Comando recebido via Realtime: $reason")
+        if (!isDeviceConnected) {
+            Log.i(AppConstants.TAG_REALTIME, "[SIGNAL] Comando recebido via Realtime: Desconexão (is_connected=false)")
             handler.post { onRestartRequested() }
+            return
+        }
+        if (restartRequested) {
+            Log.i(AppConstants.TAG_REALTIME, "[SIGNAL] Comando recebido via Realtime: Reiniciar (requested_at)")
+            handler.post { onRemoteRestart() }
             return
         }
 

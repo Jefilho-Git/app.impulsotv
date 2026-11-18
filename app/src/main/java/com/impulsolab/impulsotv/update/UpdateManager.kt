@@ -19,6 +19,7 @@ import com.impulsolab.impulsotv.constants.AppConstants
 import com.impulsolab.impulsotv.service.PlayerService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -100,6 +101,15 @@ class UpdateManager private constructor(context: Context) {
         loopJob = null
     }
 
+    /**
+     * Verifica agora, ignorando a janela de horário, e espera o resultado.
+     * @return true se uma versão nova foi baixada, conferida e mandada instalar.
+     */
+    suspend fun checkAndInstallNow(): Boolean = withContext(Dispatchers.IO) {
+        if (BuildConfig.DEBUG) return@withContext false
+        runCheck(force = true, baseUrl = AppConstants.UPDATE_BASE_URL)
+    }
+
     /** Verifica e instala agora, ignorando a janela de horário (comando de manutenção). */
     fun checkNow(baseUrlOverride: String? = null) {
         val base = if (BuildConfig.DEBUG && !baseUrlOverride.isNullOrBlank()) baseUrlOverride
@@ -109,31 +119,34 @@ class UpdateManager private constructor(context: Context) {
 
     // ─── Ciclo ────────────────────────────────────────────────────────────
 
-    private suspend fun runCheck(force: Boolean, baseUrl: String) = mutex.withLock {
+    /** @return true se mandou instalar uma versão nova. */
+    private suspend fun runCheck(force: Boolean, baseUrl: String): Boolean = mutex.withLock {
         try {
             if (!force && !installWindowOpen()) {
                 Log.v(TAG, "Fora da janela de instalação — próxima verificação depois")
-                return@withLock
+                return@withLock false
             }
             val base = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-            val info = fetchInfo(base) ?: return@withLock
+            val info = fetchInfo(base) ?: return@withLock false
             val current = BuildConfig.VERSION_CODE
             if (info.versionCode <= current) {
                 Log.i(TAG, "Já na versão mais recente ($current; servidor ${info.versionCode})")
                 cleanupOld(keepVersion = -1)
-                return@withLock
+                return@withLock false
             }
             Log.i(TAG, "Nova versão disponível: ${info.versionName} (${info.versionCode}) — atual $current")
 
-            val apk = download(base, info) ?: return@withLock
+            val apk = download(base, info) ?: return@withLock false
             if (!verify(apk, info)) {
                 apk.delete()
-                return@withLock
+                return@withLock false
             }
             cleanupOld(keepVersion = info.versionCode)
             install(apk)
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Falha na verificação de atualização: ${e.message}")
+            false
         }
     }
 

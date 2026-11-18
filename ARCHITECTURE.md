@@ -152,7 +152,7 @@ nesse canal (`device_send_signal`).
 |---|---|
 | `device` com `revoked = true` e `is_connected = true` | Outro aparelho assumiu → pareamento mantendo as mídias |
 | `device` com `is_connected = false` | Reset → pareamento |
-| `device` com `restart_requested_at` diferente do último visto | Reset → pareamento |
+| `device` com `restart_requested_at` diferente do último visto | **Reiniciar** (3.3.1+): procura versão nova na hora e instala; sem versão nova, reabre o app mantendo sessão e mídias |
 | `device` com `playlist_id` diferente | Busca a playlist nova |
 | `playlist` | Itens da playlist mudaram → busca a playlist nova |
 
