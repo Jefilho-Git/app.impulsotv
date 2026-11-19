@@ -131,21 +131,26 @@ class UpdateManager private constructor(context: Context) {
             val current = BuildConfig.VERSION_CODE
             if (info.versionCode <= current) {
                 Log.i(TAG, "Já na versão mais recente ($current; servidor ${info.versionCode})")
+                UpdateStatus.clear()
                 cleanupOld(keepVersion = -1)
                 return@withLock false
             }
             Log.i(TAG, "Nova versão disponível: ${info.versionName} (${info.versionCode}) — atual $current")
+            UpdateStatus.set("downloading", target = info.versionName ?: info.versionCode.toString(), progress = 0)
 
             val apk = download(base, info) ?: return@withLock false
+            UpdateStatus.set("verifying")
             if (!verify(apk, info)) {
                 apk.delete()
                 return@withLock false
             }
             cleanupOld(keepVersion = info.versionCode)
+            UpdateStatus.set("installing")
             install(apk)
             true
         } catch (e: Exception) {
             Log.e(TAG, "Falha na verificação de atualização: ${e.message}")
+            UpdateStatus.fail("error")
             false
         }
     }
@@ -191,22 +196,39 @@ class UpdateManager private constructor(context: Context) {
             http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     Log.w(TAG, "Download do APK: HTTP ${resp.code} ($url)")
+                    UpdateStatus.fail("download_http")
                     return null
                 }
-                val body = resp.body ?: return null
-                val needed = body.contentLength().coerceAtLeast(0) + AppConstants.CACHE_MIN_FREE_BYTES
+                val body = resp.body ?: return null.also { UpdateStatus.fail("download_failed") }
+                val total = body.contentLength()
+                val needed = total.coerceAtLeast(0) + AppConstants.CACHE_MIN_FREE_BYTES
                 if (updateDir.usableSpace < needed) {
                     Log.w(TAG, "Sem espaço para baixar a atualização")
+                    UpdateStatus.fail("no_space")
                     return null
                 }
-                body.byteStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                body.byteStream().use { input ->
+                    tmp.outputStream().use { out ->
+                        // Cópia com porcentagem para a ficha técnica (de 5 em 5%).
+                        val buf = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            copied += n
+                            if (total > 0) UpdateStatus.progress(((copied * 100 / total) / 5 * 5).toInt())
+                        }
+                    }
+                }
             }
             dest.delete()
-            if (!tmp.renameTo(dest)) return null
+            if (!tmp.renameTo(dest)) return null.also { UpdateStatus.fail("download_failed") }
             Log.i(TAG, "APK baixado: ${dest.name} (${dest.length() / 1024} KB)")
             return dest
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao baixar APK: ${e.message}")
+            UpdateStatus.fail("download_failed")
             return null
         } finally {
             tmp.delete()
@@ -217,21 +239,25 @@ class UpdateManager private constructor(context: Context) {
         val expected = info.sha256
         if (expected.isNullOrBlank()) {
             Log.e(TAG, "versao.json sem sha256 — instalação recusada")
+            UpdateStatus.fail("checksum")
             return false
         }
         val actual = sha256(apk)
         if (!actual.equals(expected, ignoreCase = true)) {
             Log.e(TAG, "SHA-256 não confere (esperado $expected, obtido $actual) — arquivo descartado")
+            UpdateStatus.fail("checksum")
             return false
         }
         @Suppress("DEPRECATION")
         val pkgInfo = ctx.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
         if (pkgInfo == null) {
             Log.e(TAG, "Arquivo não é um APK válido")
+            UpdateStatus.fail("invalid_apk")
             return false
         }
         if (pkgInfo.packageName != ctx.packageName) {
             Log.e(TAG, "APK é de outro pacote (${pkgInfo.packageName}); este app é ${ctx.packageName}")
+            UpdateStatus.fail("invalid_apk")
             return false
         }
         @Suppress("DEPRECATION")
@@ -239,6 +265,7 @@ class UpdateManager private constructor(context: Context) {
                          else pkgInfo.versionCode.toLong()
         if (apkVersion <= BuildConfig.VERSION_CODE) {
             Log.e(TAG, "APK não é mais novo ($apkVersion <= ${BuildConfig.VERSION_CODE})")
+            UpdateStatus.fail("invalid_apk")
             return false
         }
         Log.i(TAG, "APK verificado (SHA-256, pacote e versão $apkVersion)")
@@ -331,6 +358,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 if (confirm != null) {
                     Log.i(UpdateManager.TAG, "Aguardando confirmação 'Instalar' na tela")
+                    UpdateStatus.set("waiting_confirmation")
                     // O watchdog não pode jogar o app por cima da tela de confirmação
                     PlayerService.suppressBringToFrontUntil =
                         System.currentTimeMillis() + AppConstants.SYSTEM_SCREEN_GRACE_MS
@@ -340,10 +368,14 @@ class InstallResultReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            PackageInstaller.STATUS_SUCCESS ->
+            PackageInstaller.STATUS_SUCCESS -> {
                 Log.i(UpdateManager.TAG, "Atualização instalada")
-            else ->
+                UpdateStatus.clear()
+            }
+            else -> {
                 Log.e(UpdateManager.TAG, "Instalação falhou (status=$status): $message")
+                UpdateStatus.fail("install_failed")
+            }
         }
     }
 }

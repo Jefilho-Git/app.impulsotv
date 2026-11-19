@@ -327,3 +327,12 @@ enviado para `device-heartbeat`:
 Qualquer erro ao montar a ficha só a omite: o heartbeat e o player seguem.
 O servidor filtra os campos (`supabase/functions/_shared/player-status.ts` no
 repositório do painel) e grava em `devices.player_status`.
+
+## Andamento da atualização (3.5.1)
+
+`update/UpdateStatus.kt` guarda em memória a etapa da atualização em curso e a
+ficha técnica envia em `player_status.update`: `downloading` (com `progress` de
+5 em 5%), `verifying`, `installing`, `waiting_confirmation` (tela "Instalar?" do
+Android aberta) ou `failed` com `error` (`no_space`, `download_http`,
+`download_failed`, `checksum`, `invalid_apk`, `install_failed`, `error`).
+Sem atualização em andamento o campo não vai. Nada aqui interrompe a instalação.

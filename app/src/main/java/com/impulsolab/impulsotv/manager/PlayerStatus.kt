@@ -17,6 +17,7 @@ import android.util.Log
  *   - snapshot() nunca lança exceção: em qualquer erro devolve null e o
  *     heartbeat segue sem a ficha
  *   - só leitura do sistema; nada é gravado
+ *   - update: andamento da atualização em curso (UpdateStatus)
  *   - do item atual vai só o ID da mídia (o painel resolve o nome), a
  *     posição na playlist e se toca do armazenamento ou da internet
  * ════════════════════════════════════════════════════════════════
@@ -81,6 +82,7 @@ object PlayerStatus {
             ))
             put("network", networkType(context))
             put("uptime_ms", SystemClock.elapsedRealtime())
+            com.impulsolab.impulsotv.update.UpdateStatus.toPayload()?.let { put("update", it) }
         }
     } catch (e: Exception) {
         Log.w("ImpulsoTV.Status", "ficha técnica ignorada: ${e.message}")
