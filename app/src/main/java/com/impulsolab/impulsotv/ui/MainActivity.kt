@@ -199,7 +199,10 @@ class MainActivity : AppCompatActivity() {
     private var itemToken = 0
 
     // Timer de imagem — cancelado quando o item muda
-    private val imageTimerRunnable = Runnable { advanceToNext() }
+    private val imageTimerRunnable = Runnable {
+        com.impulsolab.impulsotv.manager.PlaybackLog.finish(completed = true)   // só conta se a imagem chegou à tela
+        advanceToNext()
+    }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────
 
@@ -229,6 +232,7 @@ class MainActivity : AppCompatActivity() {
         supabase       = SupabaseClient()
         session.getSession()?.let { applyCredentials(it) }
         cacheManager   = MediaCacheManager(this)
+        com.impulsolab.impulsotv.manager.PlaybackLog.init(applicationContext)
         networkManager = NetworkStateManager(this) {
             // Rede voltou: se estamos esperando o servidor, tenta já (2s)
             handler.post {
@@ -467,6 +471,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        // App saiu da tela: fecha o item atual como interrompido e guarda a fila.
+        com.impulsolab.impulsotv.manager.PlaybackLog.finish(completed = false)
+        com.impulsolab.impulsotv.manager.PlaybackLog.saveNow()
         if (isBound) {
             unbindService(serviceConnection)
             isBound = false
@@ -831,6 +838,7 @@ class MainActivity : AppCompatActivity() {
                         playerStatus = playerStatusSnapshot()
                     )
                     flushMediaTelemetry(deviceCode)
+                    flushPlayback(deviceCode)
                     delay(AppConstants.HEARTBEAT_INTERVAL_MS)
                 } catch (e: Exception) {
                     if (e is IllegalStateException && e.message == "TAKEOVER") {
@@ -840,6 +848,22 @@ class MainActivity : AppCompatActivity() {
                     delay(5000)
                 }
             }
+        }
+    }
+
+    /** Envia a comprovação de exibição pendente (até 2 lotes). Isolado: nunca interrompe o heartbeat. */
+    private suspend fun flushPlayback(deviceCode: String) {
+        try {
+            for (i in 0 until 2) {
+                val batch = com.impulsolab.impulsotv.manager.PlaybackLog.peekBatch()
+                if (batch.isEmpty()) break
+                // Lote não confirmado (sem internet, 429, 5xx): tenta no próximo heartbeat.
+                if (!com.impulsolab.impulsotv.manager.PlaybackLog.onBatchResult(batch, supabase.sendPlayback(deviceCode, batch))) break
+            }
+            com.impulsolab.impulsotv.manager.PlaybackLog.maybeSave()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(AppConstants.TAG_HEARTBEAT, "[PLAYBACK] envio ignorado: ${e.message}")
         }
     }
 
@@ -922,11 +946,13 @@ class MainActivity : AppCompatActivity() {
                         if (state == Player.STATE_ENDED) {
                             // [ITEM-VIDEO] Vídeo terminou → próximo item
                             Log.d(AppConstants.TAG_PLAYER, "[ITEM-VIDEO] Vídeo concluído")
+                            com.impulsolab.impulsotv.manager.PlaybackLog.finish(completed = true)
                             advanceToNext()
                         }
                     }
 
                     override fun onRenderedFirstFrame() {
+                        com.impulsolab.impulsotv.manager.PlaybackLog.onScreen()
                         // [TRANSITION] Imagem → vídeo: só revela o vídeo quando
                         // o primeiro quadro real já está na tela
                         if (revealVideoOnFirstFrame) {
@@ -1092,8 +1118,9 @@ class MainActivity : AppCompatActivity() {
         Log.d(AppConstants.TAG_PLAYER, "[ITEM-VIDEO] Reproduzindo: ${item.mediaFile.originalName} | vertical=${item.isVerticalDisplay}")
     }
 
-    /** Avisa a ficha técnica qual item começou. Nunca interrompe o player. */
+    /** Avisa a ficha técnica e a comprovação de exibição qual item começou. Nunca interrompe o player. */
     private fun reportNowPlaying(item: PlaylistItem, fromCache: Boolean) {
+        com.impulsolab.impulsotv.manager.PlaybackLog.onItemStarted(item.mediaFile.id, item.playlistId, item.isVideo, fromCache)
         try {
             com.impulsolab.impulsotv.manager.PlayerStatus.onItemStarted(
                 mediaFileId = item.mediaFile.id,
@@ -1155,6 +1182,7 @@ class MainActivity : AppCompatActivity() {
                     Log.d(AppConstants.TAG_PLAYER, "[ITEM-IMAGE] Imagem carregada; exibindo por ${displayMs / 1000}s: ${item.mediaFile.originalName}")
                     // [TRANSITION] Vídeo → imagem: fade só com a imagem pronta
                     showImageLayer()
+                    com.impulsolab.impulsotv.manager.PlaybackLog.onScreen()
                     // Timer conta a partir da imagem NA TELA (não do início do download)
                     handler.removeCallbacks(imageTimerRunnable)
                     handler.postDelayed(imageTimerRunnable, displayMs)
@@ -1306,6 +1334,7 @@ class MainActivity : AppCompatActivity() {
         imageView.visibility = View.GONE
         playlistItems = emptyList()
         com.impulsolab.impulsotv.manager.PlayerStatus.clear()
+        com.impulsolab.impulsotv.manager.PlaybackLog.finish(completed = false)
         playlistHash = 0
         currentIndex = 0
         if (clearMedia) cacheManager.clearAll()

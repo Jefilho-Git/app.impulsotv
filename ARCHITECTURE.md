@@ -336,3 +336,20 @@ ficha técnica envia em `player_status.update`: `downloading` (com `progress` de
 Android aberta) ou `failed` com `error` (`no_space`, `download_http`,
 `download_failed`, `checksum`, `invalid_apk`, `install_failed`, `error`).
 Sem atualização em andamento o campo não vai. Nada aqui interrompe a instalação.
+
+## Comprovação de exibição (3.6.0)
+
+`manager/PlaybackLog.kt` registra cada mídia que esteve na tela: hora do
+servidor em que apareceu (1º quadro do vídeo / imagem carregada), tempo
+visível e se tocou até o fim (`completed=false` quando a playlist muda, a TV
+desconecta ou o app sai da tela). Item que não chegou à tela não é registrado.
+
+- Fila de até 5000 registros, salva em `filesDir/playback-queue.json` no máximo
+  1x/min e no `onStop` (escrita atômica). Exibições sem internet são enviadas
+  quando a conexão volta.
+- O heartbeat envia até 2 lotes de 100 para a Edge Function `device-playback`
+  com `x-device-token`. 2xx ou 4xx (exceto 429) saem da fila; 503 pausa 1 h;
+  sem resposta, 429 ou 5xx tentam de novo com o mesmo `event_id`.
+- Sem token (modo antigo): não envia.
+
+Para desligar sem novo APK: `PLAYBACK_PROOF_ENABLED=false` nos segredos do Supabase.

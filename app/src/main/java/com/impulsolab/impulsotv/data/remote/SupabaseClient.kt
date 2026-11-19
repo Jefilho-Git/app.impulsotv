@@ -205,6 +205,34 @@ class SupabaseClient {
      * Só com o token da TV; no modo antigo não envia nada.
      * @return código HTTP, ou -1 se não houve resposta. Nunca lança exceção.
      */
+    /**
+     * Envia um lote da comprovação de exibição (device-playback).
+     * @return código HTTP, -1 sem resposta, 0 se não há o que enviar (sem token = modo antigo).
+     */
+    suspend fun sendPlayback(
+        deviceCode: String,
+        events: List<com.impulsolab.impulsotv.manager.PlaybackLog.Event>
+    ): Int = withContext(Dispatchers.IO) {
+        if (deviceToken == null || events.isEmpty()) return@withContext 0
+        try {
+            val payload = mapOf(
+                "device_code" to deviceCode.uppercase(),
+                "app_version" to "${com.impulsolab.impulsotv.BuildConfig.VERSION_NAME}-android",
+                "events" to events.map { it.toPayload() }
+            )
+            val body = gson.toJson(payload).toRequestBody(JSON)
+            val request = Request.Builder().url("${AppConstants.FUNCTIONS_URL}/device-playback")
+                .supabaseHeaders().post(body).build()
+            http.newCall(request).execute().use { response ->
+                Log.d(AppConstants.TAG_SUPABASE, "[FUNCTION] device-playback status=${response.code} eventos=${events.size}")
+                response.code
+            }
+        } catch (e: Exception) {
+            Log.w(AppConstants.TAG_SUPABASE, "[FUNCTION] device-playback sem resposta: ${e.message}")
+            -1
+        }
+    }
+
     suspend fun sendMediaTelemetry(
         deviceCode: String,
         events: List<com.impulsolab.impulsotv.manager.MediaTelemetry.Event>
