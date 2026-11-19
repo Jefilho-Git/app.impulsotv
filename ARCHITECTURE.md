@@ -310,3 +310,20 @@ a Edge Function `media-telemetry` com `x-device-token`, a cada 30 s.
 - Mídia tocada direto da rede (disco cheio) e cache local não são registrados.
 
 Para desligar sem novo APK: `MEDIA_TELEMETRY_V2_ENABLED=false` nos segredos do Supabase.
+
+## Ficha técnica (3.5.0)
+
+`manager/PlayerStatus.kt` monta, a cada heartbeat, o campo `player_status`
+enviado para `device-heartbeat`:
+
+- `now_playing`: ID da mídia (o painel resolve o nome), vídeo ou imagem,
+  posição na playlist, desde quando e se toca do armazenamento (`cache`) ou da
+  internet (`network`). Atualizado em `playVideo`/`showImage`; limpo quando a
+  playlist esvazia ou a TV desconecta.
+- `device`: fabricante, modelo, Android, SDK e resolução da tela.
+- `storage`: espaço livre e total de `filesDir`, tamanho e quantidade de mídias guardadas.
+- `network` (wifi, ethernet, cellular, other, none) e `uptime_ms` (tempo ligado).
+
+Qualquer erro ao montar a ficha só a omite: o heartbeat e o player seguem.
+O servidor filtra os campos (`supabase/functions/_shared/player-status.ts` no
+repositório do painel) e grava em `devices.player_status`.

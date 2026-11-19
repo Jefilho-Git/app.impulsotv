@@ -518,6 +518,7 @@ class MainActivity : AppCompatActivity() {
 
     /** [EMPTY] Nenhuma mídia: logo + aviso em vez de tela preta. */
     private fun showEmptyPlaylist() {
+        com.impulsolab.impulsotv.manager.PlayerStatus.clear()
         showSync()
         progressSync.visibility = View.GONE
         tvSyncStatus.text = "Nenhuma mídia nesta playlist.\nAdicione conteúdo no painel."
@@ -826,7 +827,8 @@ class MainActivity : AppCompatActivity() {
                         deviceCode = deviceCode,
                         fingerprint = fingerprint,
                         orientation = orientation,
-                        isOnline = networkManager.isOnline()
+                        isOnline = networkManager.isOnline(),
+                        playerStatus = playerStatusSnapshot()
                     )
                     flushMediaTelemetry(deviceCode)
                     delay(AppConstants.HEARTBEAT_INTERVAL_MS)
@@ -839,6 +841,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /** Ficha técnica para o heartbeat. Isolado: erro aqui só omite a ficha. */
+    private fun playerStatusSnapshot(): Map<String, Any?>? = try {
+        val (bytes, files) = cacheManager.stats()
+        com.impulsolab.impulsotv.manager.PlayerStatus.snapshot(applicationContext, bytes, files)
+    } catch (_: Exception) {
+        null
     }
 
     /** Envia a coleta de mídia pendente. Isolado: nunca interrompe o heartbeat. */
@@ -1059,6 +1069,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("UnsafeOptInUsageError")
     private fun playVideo(item: PlaylistItem) {
         val uriStr = cacheManager.getPlayableUri(item)
+        reportNowPlaying(item, fromCache = uriStr.startsWith("/"))
         val uri = if (uriStr.startsWith("/")) {
             Uri.fromFile(File(uriStr))
         } else {
@@ -1081,6 +1092,19 @@ class MainActivity : AppCompatActivity() {
         Log.d(AppConstants.TAG_PLAYER, "[ITEM-VIDEO] Reproduzindo: ${item.mediaFile.originalName} | vertical=${item.isVerticalDisplay}")
     }
 
+    /** Avisa a ficha técnica qual item começou. Nunca interrompe o player. */
+    private fun reportNowPlaying(item: PlaylistItem, fromCache: Boolean) {
+        try {
+            com.impulsolab.impulsotv.manager.PlayerStatus.onItemStarted(
+                mediaFileId = item.mediaFile.id,
+                isVideo = item.isVideo,
+                position = currentIndex + 1,
+                total = playlistItems.size,
+                fromCache = fromCache,
+            )
+        } catch (_: Exception) { /* só informativo */ }
+    }
+
     // ─── [ITEM-IMAGE] Exibição de imagem ─────────────────────────────────
 
     /**
@@ -1091,6 +1115,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun showImage(item: PlaylistItem) {
         val uriStr = cacheManager.getPlayableUri(item)
+        reportNowPlaying(item, fromCache = uriStr.startsWith("/"))
         val uri = if (uriStr.startsWith("/")) {
             File(uriStr)
         } else {
@@ -1280,6 +1305,7 @@ class MainActivity : AppCompatActivity() {
         imageView.animate().cancel()
         imageView.visibility = View.GONE
         playlistItems = emptyList()
+        com.impulsolab.impulsotv.manager.PlayerStatus.clear()
         playlistHash = 0
         currentIndex = 0
         if (clearMedia) cacheManager.clearAll()

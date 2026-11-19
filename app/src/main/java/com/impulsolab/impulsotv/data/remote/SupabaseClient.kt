@@ -121,7 +121,8 @@ class SupabaseClient {
         deviceCode: String,
         fingerprint: String,
         orientation: String,
-        isOnline: Boolean
+        isOnline: Boolean,
+        playerStatus: Map<String, Any?>? = null
     ): Boolean = withContext(Dispatchers.IO) {
         val url = "${AppConstants.FUNCTIONS_URL}/device-heartbeat"
         val payload = mapOf(
@@ -132,7 +133,9 @@ class SupabaseClient {
             "is_online" to isOnline,
             "app_version" to "${com.impulsolab.impulsotv.BuildConfig.VERSION_NAME}-android",
             // Hora do SERVIDOR (o relógio da TV atrasa sem internet/energia)
-            "last_checkin" to com.impulsolab.impulsotv.manager.ServerClock.nowMillis()
+            "last_checkin" to com.impulsolab.impulsotv.manager.ServerClock.nowMillis(),
+            // Ficha técnica (3.5+). Nulo = não enviada (o Gson omite).
+            "player_status" to playerStatus
         )
         val body = gson.toJson(payload).toRequestBody(JSON)
         val request = Request.Builder().url(url).supabaseHeaders().post(body).build()

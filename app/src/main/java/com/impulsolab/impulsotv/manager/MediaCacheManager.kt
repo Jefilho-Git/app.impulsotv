@@ -174,6 +174,14 @@ class MediaCacheManager(context: Context) {
     }
 
     /** Limpa todo o cache local (apenas em caso de desvinculação total) */
+    /** Tamanho e quantidade de mídias guardadas na TV (para a ficha técnica). */
+    fun stats(): Pair<Long, Int> = try {
+        val files = cacheDir.listFiles()?.filter { it.isFile } ?: emptyList()
+        files.sumOf { it.length() } to files.size
+    } catch (_: Exception) {
+        0L to 0
+    }
+
     fun clearAll() {
         cacheDir.deleteRecursively()
         cacheDir.mkdirs()
